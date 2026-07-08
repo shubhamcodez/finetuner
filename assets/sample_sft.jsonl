@@ -1,0 +1,6 @@
+{"messages": [{"role": "user", "content": "What is 2+2?"}, {"role": "assistant", "content": "2+2 equals 4."}]}
+{"messages": [{"role": "user", "content": "Capital of France?"}, {"role": "assistant", "content": "The capital of France is Paris."}]}
+{"messages": [{"role": "user", "content": "Explain photosynthesis briefly."}, {"role": "assistant", "content": "Photosynthesis is the process plants use to convert sunlight, water, and CO2 into glucose and oxygen."}]}
+{"instruction": "Translate to French", "input": "Hello, how are you?", "output": "Bonjour, comment allez-vous?"}
+{"instruction": "Summarize", "input": "The quick brown fox jumps over the lazy dog.", "output": "A fox jumps over a dog."}
+{"text": "### Instruction:\nWrite a haiku about coding.\n### Response:\nKeys tap in the night\nBugs flee the morning sunlight\nCode compiles at last"}

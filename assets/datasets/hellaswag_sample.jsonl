@@ -1,0 +1,3 @@
+{"ctx": "A man is at the gym. He", "endings": ["picks up weights.", "eats a sandwich.", "flies to the moon.", "drives a car."], "label": 0}
+{"ctx": "She opened the umbrella because it was", "endings": ["raining outside.", "a sunny day.", "midnight.", "her birthday."], "label": 0}
+{"ctx": "The chef tasted the soup and added", "endings": ["more salt.", "a bicycle.", "blue paint.", "a novel."], "label": 0}

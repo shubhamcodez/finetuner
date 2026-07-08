@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finetuner"
+version = "0.1.0"
+description = "Desktop app for GPU LLM fine-tuning and evaluation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.6",
+    "psutil",
+    "nvidia-ml-py",
+    "transformers>=4.45",
+    "trl>=0.12",
+    "peft",
+    "bitsandbytes",
+    "datasets",
+    "accelerate",
+    "lighteval",
+    "emoji",
+    "nltk",
+    "huggingface_hub",
+]
+
+[project.optional-dependencies]
+dev = ["pyinstaller>=6.0"]
+
+[project.scripts]
+finetuner = "finetuner.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["finetuner*"]
+
+[tool.setuptools.package-data]
+"*" = ["../assets/*"]

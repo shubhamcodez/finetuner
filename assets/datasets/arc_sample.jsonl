@@ -1,0 +1,3 @@
+{"question": "Which gas do plants absorb from the atmosphere during photosynthesis?", "choices": {"text": ["Oxygen", "Carbon dioxide", "Nitrogen", "Hydrogen"], "label": ["A", "B", "C", "D"]}, "answerKey": "B"}
+{"question": "What force keeps planets in orbit around the Sun?", "choices": {"text": ["Magnetism", "Gravity", "Friction", "Pressure"], "label": ["A", "B", "C", "D"]}, "answerKey": "B"}
+{"question": "Water boils at what temperature at sea level (Celsius)?", "choices": {"text": ["90", "100", "110", "120"], "label": ["A", "B", "C", "D"]}, "answerKey": "B"}
