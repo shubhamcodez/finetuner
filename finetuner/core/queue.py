@@ -6,7 +6,7 @@ from typing import Callable
 from finetuner.core.artifacts import atomic_write_json
 from finetuner.core.job import JobStatus, ModelJob, ModelRunResult, ProjectConfig
 from finetuner.core.paths import model_download_path, runs_dir, safe_component
-from finetuner.workflows.executor import WorkflowCancelled
+from finetuner.workflows.executor import StageEvent, WorkflowCancelled
 
 
 class JobQueue:
@@ -17,12 +17,14 @@ class JobQueue:
         progress_callback: Callable[[str, int, int], None] | None = None,
         model_done_callback: Callable[[ModelRunResult], None] | None = None,
         download_progress_callback: Callable[[int, str], None] | None = None,
+        stage_event_callback: Callable[[StageEvent], None] | None = None,
     ) -> None:
         self.config = config
         self.log = log_callback or (lambda _msg: None)
         self.on_progress = progress_callback or (lambda _phase, _cur, _total: None)
         self.on_model_done = model_done_callback or (lambda _r: None)
         self.on_download_progress = download_progress_callback or (lambda _pct, _desc: None)
+        self.on_stage_event = stage_event_callback or (lambda _event: None)
         self._cancelled = False
         self.results: list[ModelRunResult] = []
 
@@ -64,8 +66,11 @@ class JobQueue:
                 output_path = run_root / safe_component(model.name)
                 output_path.mkdir(parents=True, exist_ok=True)
 
-                dataset = self._resolve_dataset()
-                self.log(f"Training on dataset: {dataset}")
+                from finetuner.core.project_state import workflow_requires_dataset
+
+                dataset = self._resolve_dataset(required=workflow_requires_dataset(self.config))
+                if dataset:
+                    self.log(f"Workflow dataset: {dataset}")
 
                 from finetuner.workflows.executor import WorkflowContext, WorkflowExecutor
                 from finetuner.workflows.runtime import production_handlers
@@ -83,6 +88,8 @@ class JobQueue:
                         project_config=self.config,
                         log=self.log,
                         is_cancelled=lambda: self._cancelled,
+                        stage_callback=self.on_stage_event,
+                        subject=model.name,
                     ),
                 )
                 trained_path = execution.latest_artifact("policy_model", str(model_path))
@@ -139,7 +146,7 @@ class JobQueue:
         model.output_path = str(dest)
         return dest
 
-    def _resolve_dataset(self) -> str:
+    def _resolve_dataset(self, *, required: bool = True) -> str:
         training = self.config.training
         if training.dataset_path and Path(training.dataset_path).exists():
             return training.dataset_path
@@ -149,9 +156,11 @@ class JobQueue:
             from finetuner.datasets.hf_datasets import normalize_hf_dataset_id
 
             return normalize_hf_dataset_id(training.dataset_hf_id)
-        raise ValueError(
-            "No dataset configured. Select a preset, provide a JSONL path, or set an HF dataset ID."
-        )
+        if required:
+            raise ValueError(
+                "No dataset configured. Select a preset, provide a JSONL path, or set an HF dataset ID."
+            )
+        return ""
 
     def _save_results(self, run_root: Path) -> None:
         payload = {

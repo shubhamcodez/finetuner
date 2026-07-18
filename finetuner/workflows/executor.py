@@ -28,6 +28,23 @@ class WorkflowContext:
     project_config: Any
     log: Callable[[str], None] = lambda _message: None
     is_cancelled: Callable[[], bool] = lambda: False
+    stage_callback: Callable[[StageEvent], None] = lambda _event: None
+    subject: str = ""
+
+
+@dataclass(frozen=True)
+class StageEvent:
+    run_id: str
+    stage_id: str
+    stage_name: str
+    kind: str
+    status: str
+    index: int
+    total: int
+    subject: str = ""
+    message: str = ""
+    metrics: dict[str, float] = field(default_factory=dict)
+    artifact_names: tuple[str, ...] = ()
 
 
 @dataclass
@@ -85,7 +102,8 @@ class WorkflowExecutor:
         outputs: dict[str, StageOutput] = {}
 
         try:
-            for stage in workflow.topological_stages():
+            ordered_stages = workflow.topological_stages()
+            for stage_index, stage in enumerate(ordered_stages, start=1):
                 if context.is_cancelled():
                     raise WorkflowCancelled("Workflow cancelled by user")
                 handler = self.handlers.get(stage.kind)
@@ -102,6 +120,19 @@ class WorkflowExecutor:
                 }
                 manifest.stages.append(stage_record)
                 manifest.save(manifest_path)
+                self._notify(
+                    context,
+                    StageEvent(
+                        context.run_id,
+                        stage.stage_id,
+                        stage.name,
+                        stage.kind.value,
+                        "running",
+                        stage_index,
+                        len(ordered_stages),
+                        context.subject,
+                    ),
+                )
                 try:
                     output = handler(stage, context, dependencies)
                 except Exception as exc:
@@ -110,6 +141,20 @@ class WorkflowExecutor:
                         finished_at=_now(),
                         duration_seconds=round(time.monotonic() - started, 3),
                         error=f"{type(exc).__name__}: {exc}",
+                    )
+                    self._notify(
+                        context,
+                        StageEvent(
+                            context.run_id,
+                            stage.stage_id,
+                            stage.name,
+                            stage.kind.value,
+                            "failed",
+                            stage_index,
+                            len(ordered_stages),
+                            context.subject,
+                            str(exc),
+                        ),
                     )
                     raise
                 outputs[stage.stage_id] = output
@@ -132,6 +177,21 @@ class WorkflowExecutor:
                             )
                         )
                 manifest.save(manifest_path)
+                self._notify(
+                    context,
+                    StageEvent(
+                        context.run_id,
+                        stage.stage_id,
+                        stage.name,
+                        stage.kind.value,
+                        "completed",
+                        stage_index,
+                        len(ordered_stages),
+                        context.subject,
+                        metrics=dict(output.metrics),
+                        artifact_names=tuple(output.artifacts),
+                    ),
+                )
             manifest.finish("completed")
         except WorkflowCancelled:
             manifest.finish("cancelled")
@@ -144,6 +204,13 @@ class WorkflowExecutor:
 
         manifest.save(manifest_path)
         return WorkflowExecutionResult("completed", outputs, str(manifest_path))
+
+    @staticmethod
+    def _notify(context: WorkflowContext, event: StageEvent) -> None:
+        try:
+            context.stage_callback(event)
+        except Exception as exc:
+            context.log(f"Stage progress listener failed: {exc}")
 
 
 def dependency_artifact(

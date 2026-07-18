@@ -41,6 +41,7 @@ class QueueWorker(QThread):
     download_progress = Signal(int, str)
     model_done = Signal(object)
     finished_all = Signal(object)
+    stage_event = Signal(object)
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -60,6 +61,7 @@ class QueueWorker(QThread):
             progress_callback=lambda phase, cur, total: self.progress.emit(phase, cur, total),
             model_done_callback=lambda r: self.model_done.emit(r),
             download_progress_callback=lambda pct, desc: self.download_progress.emit(pct, desc),
+            stage_event_callback=lambda event: self.stage_event.emit(event),
         )
         results = self._queue.run()
         self.finished_all.emit(results)
