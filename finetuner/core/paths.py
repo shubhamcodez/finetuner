@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import re
 import sys
 from pathlib import Path
 
@@ -44,7 +46,25 @@ def config_path() -> Path:
 
 
 def repo_slug(repo_id: str) -> str:
-    return repo_id.replace("/", "__")
+    return safe_component(repo_id.replace("/", "__"))
+
+
+def safe_component(value: str, max_length: int = 80) -> str:
+    """Turn an untrusted display name/model id into one non-traversing path component."""
+    original = str(value).strip()
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", original).strip(" ._")
+    cleaned = cleaned or "item"
+    if cleaned in {".", ".."} or cleaned.upper() in {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{i}" for i in range(1, 10)),
+        *(f"LPT{i}" for i in range(1, 10)),
+    }:
+        cleaned = f"item_{cleaned.lower().strip('.')}"
+    digest = hashlib.sha256(original.encode("utf-8")).hexdigest()[:10]
+    return f"{cleaned[:max_length]}--{digest}"
 
 
 def model_download_path(repo_id: str) -> Path:

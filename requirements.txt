@@ -8,8 +8,8 @@
 PySide6>=6.6
 psutil
 nvidia-ml-py
-transformers>=4.45
-trl>=0.12
+transformers>=5.0,<6
+trl>=1.7,<2
 peft
 bitsandbytes
 datasets
@@ -18,4 +18,9 @@ lighteval
 emoji
 nltk
 huggingface_hub
+numpy>=1.26
+scikit-learn>=1.5
+umap-learn>=0.5.7
 pyinstaller>=6.0
+pytest>=8.3
+pytest-cov>=6.0

@@ -24,7 +24,11 @@ Write-Host "Installing CUDA PyTorch (cu128)..."
 & $venvPip install --upgrade pip
 & $venvPip install torch==2.11.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 & $venvPip install -r requirements.txt
-& $venvPip install -e ".[dev]"
+& $venvPip install -e ".[dev,analysis]"
+
+Write-Host "Running unit tests and static checks..."
+& $venvPython -m pytest -q
+& $venvPython -m ruff check finetuner tests
 
 Write-Host "Running PyInstaller..."
 & $venvPython -m PyInstaller finetuner.spec --noconfirm

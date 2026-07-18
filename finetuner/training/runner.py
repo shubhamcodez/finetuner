@@ -3,7 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from trl import DPOConfig, DPOTrainer, GRPOConfig, GRPOTrainer, RewardConfig, RewardTrainer, SFTConfig, SFTTrainer
+from trl import (
+    DPOConfig,
+    DPOTrainer,
+    GRPOConfig,
+    GRPOTrainer,
+    RewardConfig,
+    RewardTrainer,
+    SFTConfig,
+    SFTTrainer,
+)
 
 from finetuner.core.job import TrainingConfig
 from finetuner.training.common import (
@@ -18,6 +27,7 @@ from finetuner.training.common import (
 from finetuner.training.dataset_formats import prepare_method_dataset
 from finetuner.training.methods import get_method
 from finetuner.training.rewards import build_reward_function
+from finetuner.training.validation import validate_training_config
 
 
 def train(
@@ -35,6 +45,9 @@ def train(
     spec = get_method(method)
     if spec is None:
         raise ValueError(f"Unknown training method: {method}")
+    config_errors = validate_training_config(training, method)
+    if config_errors:
+        raise ValueError("; ".join(config_errors))
 
     require_cuda()
     log(f"Training method: {spec.name} — {spec.description}")
@@ -45,7 +58,12 @@ def train(
     tokenizer = load_tokenizer(model_path)
 
     raw = load_raw_dataset(dataset_path, training=training, log=log)
-    dataset = prepare_method_dataset(raw, method)
+    dataset = prepare_method_dataset(
+        raw,
+        method,
+        allow_synthetic_preferences=training.allow_synthetic_preferences,
+        seed=training.seed,
+    )
     log(f"Dataset size: {len(dataset)} examples ({method} format)")
 
     if method == "sft":
@@ -60,6 +78,10 @@ def train(
         return _train_reward(model_path, training, dataset, tokenizer, out, log)
     if method == "ppo":
         return _train_ppo(model_path, training, dataset, tokenizer, out, log)
+    if method == "orpo":
+        return _train_orpo(model_path, training, dataset, tokenizer, out, log)
+    if method == "rloo":
+        return _train_rloo(model_path, training, dataset, tokenizer, out, log)
     raise ValueError(f"Unsupported training method: {method}")
 
 
@@ -251,7 +273,7 @@ def _train_ppo(model_path, training, dataset, tokenizer, out, log):
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        target_modules=training.lora_target_modules or "all-linear",
     )
 
     def _tokenize(row):
@@ -263,7 +285,9 @@ def _train_ppo(model_path, training, dataset, tokenizer, out, log):
         )
         return {"input_ids": encoded["input_ids"], "query": row["prompt"]}
 
-    tokenized = dataset.map(_tokenize, remove_columns=[c for c in dataset.column_names if c != "prompt"])
+    tokenized = dataset.map(
+        _tokenize, remove_columns=[c for c in dataset.column_names if c != "prompt"]
+    )
 
     ppo_config = PPOConfig(
         output_dir=str(out),
@@ -297,3 +321,53 @@ def _train_ppo(model_path, training, dataset, tokenizer, out, log):
     tokenizer.save_pretrained(str(ppo_dir))
     log(f"PPO policy saved to {ppo_dir}")
     return str(ppo_dir)
+
+
+def _train_orpo(model_path, training, dataset, tokenizer, out, log):
+    try:
+        from trl.experimental.orpo import ORPOConfig, ORPOTrainer
+    except ImportError as exc:
+        raise RuntimeError("ORPO requires a TRL build containing trl.experimental.orpo") from exc
+
+    model = load_lora_model(model_path, training, log)
+    config = ORPOConfig(
+        **base_training_kwargs(training, out),
+        beta=training.dpo_beta,
+        max_length=training.max_seq_length,
+    )
+    trainer = ORPOTrainer(
+        model=model,
+        args=config,
+        train_dataset=dataset,
+        processing_class=tokenizer,
+    )
+    log(f"Starting ORPO training (beta={training.dpo_beta})...")
+    trainer.train()
+    return save_and_merge(trainer, tokenizer, out, log)
+
+
+def _train_rloo(model_path, training, dataset, tokenizer, out, log):
+    from trl import RLOOConfig, RLOOTrainer
+
+    model = load_lora_model(model_path, training, log)
+    reward_func = build_reward_function(
+        training.reward_function,
+        training.reward_model_id,
+        log=log,
+    )
+    config = RLOOConfig(
+        **base_training_kwargs(training, out),
+        num_generations=training.grpo_num_generations,
+        max_completion_length=min(256, training.max_seq_length // 2),
+        beta=training.ppo_kl_coef,
+    )
+    trainer = RLOOTrainer(
+        model=model,
+        reward_funcs=reward_func,
+        args=config,
+        train_dataset=dataset,
+        processing_class=tokenizer,
+    )
+    log(f"Starting RLOO training (generations={training.grpo_num_generations})...")
+    trainer.train()
+    return save_and_merge(trainer, tokenizer, out, log)

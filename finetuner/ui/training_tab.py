@@ -54,7 +54,9 @@ class TrainingTab(QWidget):
         preset_layout = QVBoxLayout(preset_group)
         preset_layout.setSpacing(4)
 
-        preset_hint = QLabel("Pick a Hugging Face preset aligned with your eval, or use offline sample mode.")
+        preset_hint = QLabel(
+            "Pick a Hugging Face preset aligned with your eval, or use offline sample mode."
+        )
         preset_hint.setObjectName("HintLabel")
         preset_hint.setWordWrap(True)
         preset_layout.addWidget(preset_hint)
@@ -132,7 +134,7 @@ class TrainingTab(QWidget):
             idx = self.method_combo.count() - 1
             self.method_combo.setItemData(idx, spec.description, Qt.ItemDataRole.ToolTipRole)
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
-        method_grid.addWidget(QLabel("Method"), 0, 0)
+        method_grid.addWidget(QLabel("Default method"), 0, 0)
         method_grid.addWidget(self.method_combo, 0, 1, 1, 3)
 
         self.method_hint = QLabel("")
@@ -219,28 +221,43 @@ class TrainingTab(QWidget):
         params_grid.addWidget(QLabel("LoRA alpha"), 1, 2)
         params_grid.addWidget(self.lora_alpha_spin, 1, 3)
 
+        self.lora_targets_edit = QLineEdit()
+        self.lora_targets_edit.setPlaceholderText("Auto (all linear), or q_proj,v_proj,...")
+        self.lora_targets_edit.textChanged.connect(self._sync_config)
+        params_grid.addWidget(QLabel("LoRA targets"), 2, 0)
+        params_grid.addWidget(self.lora_targets_edit, 2, 1, 1, 3)
+
         self.batch_spin = QSpinBox()
         self.batch_spin.setRange(1, 32)
         self.batch_spin.valueChanged.connect(self._sync_config)
-        params_grid.addWidget(QLabel("Batch size"), 2, 0)
-        params_grid.addWidget(self.batch_spin, 2, 1)
+        params_grid.addWidget(QLabel("Batch size"), 3, 0)
+        params_grid.addWidget(self.batch_spin, 3, 1)
 
         self.grad_accum_spin = QSpinBox()
         self.grad_accum_spin.setRange(1, 64)
         self.grad_accum_spin.valueChanged.connect(self._sync_config)
-        params_grid.addWidget(QLabel("Grad accumulation"), 2, 2)
-        params_grid.addWidget(self.grad_accum_spin, 2, 3)
+        params_grid.addWidget(QLabel("Grad accumulation"), 3, 2)
+        params_grid.addWidget(self.grad_accum_spin, 3, 3)
 
         self.max_seq_spin = QSpinBox()
         self.max_seq_spin.setRange(256, 8192)
         self.max_seq_spin.setSingleStep(256)
         self.max_seq_spin.valueChanged.connect(self._sync_config)
-        params_grid.addWidget(QLabel("Max seq length"), 3, 0)
-        params_grid.addWidget(self.max_seq_spin, 3, 1)
+        params_grid.addWidget(QLabel("Max seq length"), 4, 0)
+        params_grid.addWidget(self.max_seq_spin, 4, 1)
 
         self.qlora_check = QCheckBox("Use QLoRA (4-bit)")
         self.qlora_check.stateChanged.connect(self._sync_config)
-        params_grid.addWidget(self.qlora_check, 3, 2, 1, 2)
+        params_grid.addWidget(self.qlora_check, 4, 2, 1, 2)
+
+        self.synthetic_preferences_check = QCheckBox(
+            "Allow synthetic negative preferences (research only)"
+        )
+        self.synthetic_preferences_check.setToolTip(
+            "Disabled by default. Production DPO/KTO should use human or model-judged feedback."
+        )
+        self.synthetic_preferences_check.stateChanged.connect(self._sync_config)
+        params_grid.addWidget(self.synthetic_preferences_check, 5, 0, 1, 4)
 
         layout.addWidget(params_group)
 
@@ -267,10 +284,12 @@ class TrainingTab(QWidget):
         self.lr_spin.setValue(t.learning_rate)
         self.lora_rank_spin.setValue(t.lora_rank)
         self.lora_alpha_spin.setValue(t.lora_alpha)
+        self.lora_targets_edit.setText(",".join(t.lora_target_modules))
         self.batch_spin.setValue(t.batch_size)
         self.grad_accum_spin.setValue(t.gradient_accumulation_steps)
         self.max_seq_spin.setValue(t.max_seq_length)
         self.qlora_check.setChecked(t.use_qlora)
+        self.synthetic_preferences_check.setChecked(t.allow_synthetic_preferences)
         self.hf_token_edit.setText(self.config.hf_token)
 
         method_idx = max(0, self.method_combo.findData(t.training_method))
@@ -301,7 +320,10 @@ class TrainingTab(QWidget):
     def _update_method_hint(self) -> None:
         method_id = self.method_combo.currentData() or "sft"
         spec = TRAINING_METHODS.get(method_id)
-        self.method_hint.setText(spec.description if spec else "")
+        description = spec.description if spec else ""
+        self.method_hint.setText(
+            f"{description}. A workflow stage's method parameter overrides this default."
+        )
 
     def _update_method_fields(self) -> None:
         method_id = self.method_combo.currentData() or "sft"
@@ -312,7 +334,9 @@ class TrainingTab(QWidget):
         uses_ppo = method_id == "ppo"
 
         self.reward_combo.setEnabled(uses_reward)
-        self.reward_model_edit.setEnabled(uses_reward_model or self.reward_combo.currentData() == "hf_reward_model")
+        self.reward_model_edit.setEnabled(
+            uses_reward_model or self.reward_combo.currentData() == "hf_reward_model"
+        )
         self.beta_spin.setEnabled(uses_beta)
         self.num_gen_spin.setEnabled(uses_grpo)
         self.kl_spin.setEnabled(uses_ppo)
@@ -338,11 +362,13 @@ class TrainingTab(QWidget):
         if not preset:
             self.preset_status.setText(f"Unknown preset: {preset_id}")
             return
-        eval_name = EVAL_TASKS[preset.related_eval_id].name if preset.related_eval_id in EVAL_TASKS else preset.related_eval_id
-        mode = "offline" if self.config.training.dataset_use_bundled_only else "HF"
-        self.preset_status.setText(
-            f"Active: {preset.name} → {eval_name} · {mode}"
+        eval_name = (
+            EVAL_TASKS[preset.related_eval_id].name
+            if preset.related_eval_id in EVAL_TASKS
+            else preset.related_eval_id
         )
+        mode = "offline" if self.config.training.dataset_use_bundled_only else "HF"
+        self.preset_status.setText(f"Active: {preset.name} → {eval_name} · {mode}")
 
     def _on_preset_changed(self, index: int) -> None:
         if self._block_sync:
@@ -417,10 +443,14 @@ class TrainingTab(QWidget):
         t.learning_rate = self.lr_spin.value()
         t.lora_rank = self.lora_rank_spin.value()
         t.lora_alpha = self.lora_alpha_spin.value()
+        t.lora_target_modules = [
+            item.strip() for item in self.lora_targets_edit.text().split(",") if item.strip()
+        ]
         t.batch_size = self.batch_spin.value()
         t.gradient_accumulation_steps = self.grad_accum_spin.value()
         t.max_seq_length = self.max_seq_spin.value()
         t.use_qlora = self.qlora_check.isChecked()
+        t.allow_synthetic_preferences = self.synthetic_preferences_check.isChecked()
         t.training_method = self.method_combo.currentData() or "sft"
         t.reward_function = self.reward_combo.currentData() or "exact_match"
         t.reward_model_id = self.reward_model_edit.text().strip()

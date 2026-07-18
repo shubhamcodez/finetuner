@@ -30,15 +30,10 @@ from finetuner.core.paths import DEFAULT_MODEL_ID, DEFAULT_MODELS
 
 
 def validate_local_model(path: Path) -> tuple[bool, str]:
-    if not path.is_dir():
-        return False, "Path is not a directory"
-    config = path / "config.json"
-    if not config.exists():
-        return False, "Missing config.json — not a valid Hugging Face model folder"
-    weight_files = list(path.glob("*.safetensors")) + list(path.glob("*.bin"))
-    if not weight_files:
-        return False, "No model weight files (.safetensors or .bin) found"
-    return True, ""
+    # Compatibility wrapper: validation belongs in core so workers do not import Qt.
+    from finetuner.core.model_validation import validate_local_model as validate
+
+    return validate(path)
 
 
 class AddModelDialog(QDialog):
@@ -240,7 +235,9 @@ class ModelsTab(QWidget):
         row = rows[0]
         model = self.config.models[row]
         if model.source != ModelSource.HUGGINGFACE:
-            QMessageBox.information(self, "Download", "Only Hugging Face models can be downloaded here.")
+            QMessageBox.information(
+                self, "Download", "Only Hugging Face models can be downloaded here."
+            )
             return
         if self._download_worker and self._download_worker.isRunning():
             QMessageBox.information(self, "Download", "A download is already in progress.")
@@ -253,9 +250,7 @@ class ModelsTab(QWidget):
         self._download_worker = DownloadWorker(model.identifier, self.config.hf_token, self)
         self._download_worker.progress_text.connect(self.status_label.setText)
         self._download_worker.progress_percent.connect(self._on_download_progress)
-        self._download_worker.finished_ok.connect(
-            lambda path: self._on_download_done(row, path)
-        )
+        self._download_worker.finished_ok.connect(lambda path: self._on_download_done(row, path))
         self._download_worker.failed.connect(self._on_download_failed)
         self._download_worker.start()
 

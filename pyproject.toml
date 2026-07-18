@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "finetuner"
-version = "0.1.0"
-description = "Desktop app for GPU LLM fine-tuning and evaluation"
+version = "0.2.0"
+description = "Workflow-driven LLM post-training, distillation, evaluation, and deployment"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "PySide6>=6.6",
     "psutil",
     "nvidia-ml-py",
-    "transformers>=4.45",
-    "trl>=0.12",
+    "transformers>=5.0,<6",
+    "trl>=1.7,<2",
     "peft",
     "bitsandbytes",
     "datasets",
@@ -22,10 +22,27 @@ dependencies = [
     "emoji",
     "nltk",
     "huggingface_hub",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
-dev = ["pyinstaller>=6.0"]
+analysis = ["scikit-learn>=1.5", "umap-learn>=0.5.7"]
+openvino = ["optimum[openvino]>=1.24"]
+onnx = ["optimum[onnxruntime]>=1.24"]
+dev = [
+    "pyinstaller>=6.0",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
 
 [project.scripts]
 finetuner = "finetuner.app:main"

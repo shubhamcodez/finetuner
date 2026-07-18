@@ -72,7 +72,7 @@ def load_lora_model(model_path: str, training: TrainingConfig, log: Callable[[st
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        target_modules=training.lora_target_modules or "all-linear",
     )
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
@@ -148,9 +148,11 @@ def _format_sft_dataset(rows) -> Dataset:
     for row in rows:
         if isinstance(row, dict):
             if "text" in row:
-                formatted.append({"text": row["text"]})
+                formatted.append(dict(row))
             elif "messages" in row:
-                formatted.append({"text": _messages_to_text(row["messages"])})
+                item = dict(row)
+                item["text"] = _messages_to_text(row["messages"])
+                formatted.append(item)
             elif "instruction" in row and "output" in row:
                 inst = row.get("instruction", "")
                 inp = row.get("input", "")
@@ -159,11 +161,19 @@ def _format_sft_dataset(rows) -> Dataset:
                 if inp:
                     prompt += f"### Input:\n{inp}\n"
                 prompt += f"### Response:\n{out}"
-                formatted.append({"text": prompt})
+                item = dict(row)
+                item["text"] = prompt
+                formatted.append(item)
             elif "prompt" in row and "chosen" in row:
-                formatted.append(row)
+                formatted.append(dict(row))
+            elif "prompt" in row and "response" in row:
+                item = dict(row)
+                item["text"] = f"{row['prompt']}\n{row['response']}"
+                formatted.append(item)
             else:
-                formatted.append({"text": json.dumps(row)})
+                item = dict(row)
+                item["text"] = json.dumps(row)
+                formatted.append(item)
         else:
             formatted.append({"text": str(row)})
     return Dataset.from_list(formatted)

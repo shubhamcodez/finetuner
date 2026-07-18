@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Callable
 
-from finetuner.core.job import ModelJob, ModelRunResult, ProjectConfig
-from finetuner.core.paths import model_download_path, runs_dir
+from finetuner.core.artifacts import atomic_write_json
+from finetuner.core.job import JobStatus, ModelJob, ModelRunResult, ProjectConfig
+from finetuner.core.paths import model_download_path, runs_dir, safe_component
+from finetuner.workflows.executor import WorkflowCancelled
 
 
 class JobQueue:
@@ -31,6 +32,10 @@ class JobQueue:
     def run(self) -> list[ModelRunResult]:
         import uuid
 
+        from finetuner.workflows.preflight import validate_project_workflow
+
+        validate_project_workflow(self.config)
+
         run_id = uuid.uuid4().hex[:8]
         run_root = runs_dir() / run_id
         run_root.mkdir(parents=True, exist_ok=True)
@@ -54,45 +59,49 @@ class JobQueue:
             )
 
             try:
+                model.status = JobStatus.DOWNLOADING
                 model_path = self._ensure_model_ready(model)
-                output_path = run_root / model.name.replace(" ", "_")
+                output_path = run_root / safe_component(model.name)
                 output_path.mkdir(parents=True, exist_ok=True)
 
                 dataset = self._resolve_dataset()
                 self.log(f"Training on dataset: {dataset}")
 
-                from finetuner.training.runner import train
+                from finetuner.workflows.executor import WorkflowContext, WorkflowExecutor
+                from finetuner.workflows.runtime import production_handlers
 
-                trained_path = train(
-                    model_path=str(model_path),
-                    output_dir=str(output_path),
-                    training=self.config.training,
-                    dataset_path=dataset,
-                    log_callback=self.log,
+                self.config.workflow.validate()
+                self.log(f"Workflow: {self.config.workflow.name}")
+                model.status = JobStatus.TRAINING
+                execution = WorkflowExecutor(production_handlers()).execute(
+                    self.config.workflow,
+                    WorkflowContext(
+                        run_id=f"{run_id}-{idx + 1}",
+                        run_dir=output_path,
+                        model_path=str(model_path),
+                        dataset_path=dataset,
+                        project_config=self.config,
+                        log=self.log,
+                        is_cancelled=lambda: self._cancelled,
+                    ),
                 )
-                result.output_path = trained_path
-                model.output_path = trained_path
+                trained_path = execution.latest_artifact("policy_model", str(model_path))
+                result.output_path = str(trained_path)
+                result.manifest_path = execution.manifest_path
+                result.analysis_path = str(execution.latest_artifact("analysis", ""))
+                result.deployment_path = str(execution.latest_artifact("deployment_model", ""))
+                result.eval_results = execution.latest_artifact("eval_results", [])
+                model.output_path = result.output_path
+                model.status = JobStatus.COMPLETED
 
-                if self._cancelled:
-                    break
-
-                self.on_progress("evaluating", idx + 1, total)
-                self.log(f"Running evals for {model.name}...")
-                from finetuner.eval.runner import run_evals
-
-                eval_results = run_evals(
-                    model_path=trained_path,
-                    task_ids=self.config.enabled_evals,
-                    max_samples=self.config.eval_max_samples,
-                    log_callback=self.log,
-                )
-                result.eval_results = eval_results
-                self.log(f"Evals complete for {model.name}")
-
+            except WorkflowCancelled:
+                model.status = JobStatus.CANCELLED
+                self.log("Workflow cancelled by user.")
             except Exception as exc:
                 msg = str(exc)
                 result.training_error = msg
                 model.error = msg
+                model.status = JobStatus.CANCELLED if self._cancelled else JobStatus.FAILED
                 self.log(f"ERROR: {msg}")
 
             self.results.append(result)
@@ -103,7 +112,7 @@ class JobQueue:
 
     def _ensure_model_ready(self, model: ModelJob) -> Path:
         from finetuner.core.job import ModelSource
-        from finetuner.ui.models_tab import validate_local_model
+        from finetuner.core.model_validation import validate_local_model
 
         if model.source == ModelSource.LOCAL:
             path = Path(model.identifier)
@@ -146,12 +155,17 @@ class JobQueue:
 
     def _save_results(self, run_root: Path) -> None:
         payload = {
+            "schema_version": 1,
+            "workflow": self.config.workflow.to_dict(),
             "results": [
                 {
                     "model_name": r.model_name,
                     "model_identifier": r.model_identifier,
                     "output_path": r.output_path,
                     "training_error": r.training_error,
+                    "manifest_path": r.manifest_path,
+                    "analysis_path": r.analysis_path,
+                    "deployment_path": r.deployment_path,
                     "eval_results": [
                         {
                             "task_id": e.task_id,
@@ -163,8 +177,8 @@ class JobQueue:
                     ],
                 }
                 for r in self.results
-            ]
+            ],
         }
         out = run_root / "results.json"
-        out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        atomic_write_json(out, payload)
         self.log(f"Results saved to {out}")

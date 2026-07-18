@@ -6,6 +6,9 @@ dist/
 build/
 *.spec.bak
 .pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
 .mypy_cache/
 *.log
 .env

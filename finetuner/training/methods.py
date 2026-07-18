@@ -11,6 +11,8 @@ class TrainingMethodSpec:
     uses_reward: bool = False
     uses_reward_model: bool = False
     uses_preference_data: bool = False
+    family: str = "offline"
+    maturity: str = "stable"
 
 
 TRAINING_METHODS: dict[str, TrainingMethodSpec] = {
@@ -48,6 +50,20 @@ TRAINING_METHODS: dict[str, TrainingMethodSpec] = {
         name="Reward Model",
         description="Train a Bradley–Terry reward model on preferences",
         uses_preference_data=True,
+    ),
+    "orpo": TrainingMethodSpec(
+        method_id="orpo",
+        name="ORPO",
+        description="Reference-free odds-ratio preference optimization (experimental in TRL)",
+        uses_preference_data=True,
+        maturity="experimental",
+    ),
+    "rloo": TrainingMethodSpec(
+        method_id="rloo",
+        name="RLOO",
+        description="REINFORCE Leave-One-Out online policy optimization",
+        uses_reward=True,
+        family="online",
     ),
 }
 

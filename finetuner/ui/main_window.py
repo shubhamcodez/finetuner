@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QFrame,
@@ -19,11 +21,18 @@ from PySide6.QtWidgets import (
 from finetuner.core.config_store import load_config, save_config
 from finetuner.core.job import ModelRunResult, ProjectConfig
 from finetuner.ui.branding import app_icon
+from finetuner.ui.analysis_tab import AnalysisTab
+from finetuner.ui.deployment_tab import DeploymentTab
+from finetuner.ui.distillation_tab import DistillationTab
 from finetuner.ui.evals_tab import EvalsTab
 from finetuner.ui.models_tab import ModelsTab
 from finetuner.ui.monitor_tab import MonitorTab
 from finetuner.ui.results_tab import ResultsTab
 from finetuner.ui.training_tab import TrainingTab
+from finetuner.ui.workflows_tab import WorkflowsTab
+
+if TYPE_CHECKING:
+    from finetuner.core.queue import JobQueue
 
 
 class QueueWorker(QThread):
@@ -83,13 +92,21 @@ class MainWindow(QMainWindow):
         self.monitor_tab = MonitorTab()
         self.models_tab = ModelsTab(self.config)
         self.training_tab = TrainingTab(self.config)
+        self.workflows_tab = WorkflowsTab(self.config)
+        self.distillation_tab = DistillationTab(self.config)
+        self.deployment_tab = DeploymentTab(self.config)
         self.evals_tab = EvalsTab(self.config)
+        self.analysis_tab = AnalysisTab(self.config)
         self.results_tab = ResultsTab()
 
         self.tabs.addTab(self.monitor_tab, "Monitor")
         self.tabs.addTab(self.models_tab, "Models")
         self.tabs.addTab(self.training_tab, "Training")
+        self.tabs.addTab(self.workflows_tab, "Workflows")
+        self.tabs.addTab(self.distillation_tab, "Distillation")
+        self.tabs.addTab(self.deployment_tab, "Deploy")
         self.tabs.addTab(self.evals_tab, "Evals")
+        self.tabs.addTab(self.analysis_tab, "Analysis")
         self.tabs.addTab(self.results_tab, "Results")
 
         splitter.addWidget(self.tabs)
@@ -98,7 +115,15 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
         main_layout.addWidget(splitter, stretch=1)
 
-        for tab in (self.models_tab, self.training_tab, self.evals_tab):
+        for tab in (
+            self.models_tab,
+            self.training_tab,
+            self.workflows_tab,
+            self.distillation_tab,
+            self.deployment_tab,
+            self.evals_tab,
+            self.analysis_tab,
+        ):
             tab.config_changed.connect(self._save_config)
 
         self.training_tab.evals_suggest.connect(self._on_evals_suggest)
@@ -181,8 +206,13 @@ class MainWindow(QMainWindow):
         if not self.config.models:
             QMessageBox.warning(self, "No Models", "Add at least one model to the queue.")
             return
-        if not self.config.enabled_evals:
-            QMessageBox.warning(self, "No Evals", "Select at least one eval task.")
+        try:
+            from finetuner.workflows.preflight import validate_project_workflow
+
+            validate_project_workflow(self.config)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Workflow Preflight Failed", str(exc))
+            self.tabs.setCurrentWidget(self.workflows_tab)
             return
         if self._worker and self._worker.isRunning():
             return
@@ -193,7 +223,7 @@ class MainWindow(QMainWindow):
         self.run_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.status_label.setText("Running")
-        self._append_log("Starting sequential fine-tune + eval run...")
+        self._append_log(f"Starting workflow: {self.config.workflow.name}")
 
         self._worker = QueueWorker(self.config, self)
         self._worker.log_line.connect(self._append_log)
@@ -219,6 +249,8 @@ class MainWindow(QMainWindow):
 
     def _on_model_done(self, result: ModelRunResult) -> None:
         self.results_tab.add_result(result)
+        if result.analysis_path:
+            self.analysis_tab.set_artifact(result.analysis_path)
         self.tabs.setCurrentWidget(self.results_tab)
 
     def _on_finished(self, _results: list) -> None:

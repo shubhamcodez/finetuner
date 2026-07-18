@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+from finetuner.core.artifacts import atomic_write_json
 from finetuner.core.job import ModelJob, ModelSource, ProjectConfig, TrainingConfig
 from finetuner.core.paths import DEFAULT_MODELS, config_path
 
@@ -51,7 +52,7 @@ def _merge_default_models(config: ProjectConfig) -> ProjectConfig:
 
 def save_config(config: ProjectConfig) -> None:
     path = config_path()
-    path.write_text(json.dumps(config.to_dict(), indent=2), encoding="utf-8")
+    atomic_write_json(path, config.to_dict())
 
 
 def default_config() -> ProjectConfig:

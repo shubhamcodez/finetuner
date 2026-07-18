@@ -5,6 +5,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from finetuner.analysis.config import AnalysisConfig
+from finetuner.distillation.config import DistillationConfig
+from finetuner.quantization.specs import QuantizationConfig
+from finetuner.workflows.schema import WorkflowSpec
+from finetuner.workflows.templates import get_workflow_template, training_method_workflow
+
 
 class ModelSource(str, Enum):
     HUGGINGFACE = "huggingface"
@@ -16,6 +22,9 @@ class JobStatus(str, Enum):
     DOWNLOADING = "downloading"
     TRAINING = "training"
     EVALUATING = "evaluating"
+    DISTILLING = "distilling"
+    QUANTIZING = "quantizing"
+    ANALYZING = "analyzing"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -53,10 +62,13 @@ class TrainingConfig:
     learning_rate: float = 2e-4
     lora_rank: int = 16
     lora_alpha: int = 32
+    lora_target_modules: list[str] = field(default_factory=list)
     batch_size: int = 1
     gradient_accumulation_steps: int = 4
     max_seq_length: int = 2048
     use_qlora: bool = True
+    allow_synthetic_preferences: bool = False
+    seed: int = 42
 
 
 @dataclass
@@ -74,6 +86,9 @@ class ModelRunResult:
     output_path: str
     eval_results: list[EvalResult] = field(default_factory=list)
     training_error: str = ""
+    manifest_path: str = ""
+    analysis_path: str = ""
+    deployment_path: str = ""
 
 
 @dataclass
@@ -83,6 +98,10 @@ class ProjectConfig:
     enabled_evals: list[str] = field(default_factory=lambda: ["mmlu", "gsm8k"])
     hf_token: str = ""
     eval_max_samples: int = 100
+    workflow: WorkflowSpec = field(default_factory=lambda: get_workflow_template("sft"))
+    quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
+    distillation: DistillationConfig = field(default_factory=DistillationConfig)
+    analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -113,14 +132,20 @@ class ProjectConfig:
                 "learning_rate": self.training.learning_rate,
                 "lora_rank": self.training.lora_rank,
                 "lora_alpha": self.training.lora_alpha,
+                "lora_target_modules": list(self.training.lora_target_modules),
                 "batch_size": self.training.batch_size,
                 "gradient_accumulation_steps": self.training.gradient_accumulation_steps,
                 "max_seq_length": self.training.max_seq_length,
                 "use_qlora": self.training.use_qlora,
+                "allow_synthetic_preferences": self.training.allow_synthetic_preferences,
+                "seed": self.training.seed,
             },
             "enabled_evals": self.enabled_evals,
-            "hf_token": self.hf_token,
             "eval_max_samples": self.eval_max_samples,
+            "workflow": self.workflow.to_dict(),
+            "quantization": self.quantization.to_dict(),
+            "distillation": self.distillation.to_dict(),
+            "analysis": self.analysis.to_dict(),
         }
 
     @classmethod
@@ -139,12 +164,23 @@ class ProjectConfig:
             )
             for m in data.get("models", [])
         ]
+        training = TrainingConfig(**filtered) if filtered else TrainingConfig()
+        workflow_data = data.get("workflow")
+        if workflow_data:
+            workflow = WorkflowSpec.from_dict(workflow_data)
+        else:
+            workflow = training_method_workflow(training.training_method)
         return cls(
             models=models,
-            training=TrainingConfig(**filtered) if filtered else TrainingConfig(),
+            training=training,
             enabled_evals=data.get("enabled_evals", ["mmlu", "gsm8k"]),
+            # Read legacy tokens once for migration; to_dict intentionally never persists them.
             hf_token=data.get("hf_token", ""),
             eval_max_samples=data.get("eval_max_samples", 100),
+            workflow=workflow,
+            quantization=QuantizationConfig.from_dict(data.get("quantization")),
+            distillation=DistillationConfig.from_dict(data.get("distillation")),
+            analysis=AnalysisConfig.from_dict(data.get("analysis")),
         )
 
 
