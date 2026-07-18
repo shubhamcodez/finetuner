@@ -4,8 +4,8 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
-    QLabel,
     QScrollArea,
     QSpinBox,
     QVBoxLayout,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from finetuner.core.job import ProjectConfig
 from finetuner.eval.tasks import EVAL_TASKS
+from finetuner.ui.pipeline_context import PipelineContextBar
 
 
 class EvalsTab(QWidget):
@@ -38,10 +39,8 @@ class EvalsTab(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
 
-        hint = QLabel("Benchmarks run after each model is fine-tuned.")
-        hint.setObjectName("HintLabel")
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
+        self.pipeline_context = PipelineContextBar()
+        layout.addWidget(self.pipeline_context)
 
         settings_group = QGroupBox("Evaluation Settings")
         samples_row = QFormLayout(settings_group)
@@ -55,14 +54,15 @@ class EvalsTab(QWidget):
         layout.addWidget(settings_group)
 
         group = QGroupBox("Available Benchmarks")
-        group_layout = QVBoxLayout(group)
+        group_layout = QGridLayout(group)
         group_layout.setSpacing(4)
-        for task_id, task in EVAL_TASKS.items():
-            cb = QCheckBox(f"{task.name} — {task.description}")
+        for index, (task_id, task) in enumerate(EVAL_TASKS.items()):
+            cb = QCheckBox(task.name)
+            cb.setToolTip(task.description)
             cb.setChecked(task_id in self.config.enabled_evals)
             cb.stateChanged.connect(lambda _state, tid=task_id: self._on_toggle(tid))
             self._checkboxes[task_id] = cb
-            group_layout.addWidget(cb)
+            group_layout.addWidget(cb, index // 2, index % 2)
         layout.addWidget(group)
         layout.addStretch()
 

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from finetuner.core.job import ProjectConfig
+from finetuner.ui.pipeline_context import PipelineContextBar
 from finetuner.ui.theme import Theme
 
 
@@ -27,7 +28,7 @@ class RepresentationView(QGraphicsView):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setScene(QGraphicsScene(self))
-        self.setMinimumHeight(260)
+        self.setMinimumHeight(220)
         self.setRenderHint(self.renderHints().Antialiasing, True)
 
     def set_points(self, points: list[dict]) -> None:
@@ -82,13 +83,9 @@ class AnalysisTab(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
-        intro = QLabel(
-            "Explore pooled hidden-state geometry by layer, activation norms, attention entropy, "
-            "and cross-layer CKA similarity. Labels come from dataset topic/subject metadata when available."
-        )
-        intro.setObjectName("HintLabel")
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
+        layout.setSpacing(6)
+        self.pipeline_context = PipelineContextBar()
+        layout.addWidget(self.pipeline_context)
 
         settings = QHBoxLayout()
         form = QFormLayout()
@@ -106,7 +103,7 @@ class AnalysisTab(QWidget):
         form.addRow("Maximum samples", self.max_samples)
         settings.addLayout(form)
         settings.addStretch()
-        load_button = QPushButton("Load Analysis…")
+        load_button = QPushButton("Load Analysis...")
         load_button.clicked.connect(self._browse)
         settings.addWidget(load_button)
         layout.addLayout(settings)
@@ -175,8 +172,9 @@ class AnalysisTab(QWidget):
         layer = next(item for item in self._artifact["layers"] if int(item["layer"]) == layer_id)
         self.plot.set_points(layer["points"])
         entropy = layer.get("attention_entropy_mean")
-        entropy_text = f" · attention entropy {entropy:.3f}" if entropy is not None else ""
+        entropy_text = f" | attention entropy {entropy:.3f}" if entropy is not None else ""
         self.summary.setText(
-            f"{len(layer['points'])} samples · activation norm "
-            f"{layer['activation_norm_mean']:.3f} ± {layer['activation_norm_std']:.3f}{entropy_text}"
+            f"{len(layer['points'])} samples | activation norm "
+            f"{layer['activation_norm_mean']:.3f} +/- {layer['activation_norm_std']:.3f}"
+            f"{entropy_text}"
         )

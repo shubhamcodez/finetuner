@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from finetuner.core.download_worker import DownloadWorker
 from finetuner.core.job import ModelJob, ModelSource, ProjectConfig
-from finetuner.core.paths import DEFAULT_MODEL_ID, DEFAULT_MODELS
+from finetuner.core.paths import DEFAULT_MODEL_ID
 
 
 def validate_local_model(path: Path) -> tuple[bool, str]:
@@ -134,10 +134,7 @@ class ModelsTab(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
 
-        hint = QLabel(
-            "Fine-tuning queue — HF or local. Defaults: "
-            + ", ".join(name for name, _ in DEFAULT_MODELS)
-        )
+        hint = QLabel("Each queued model runs through the active workflow with shared settings.")
         hint.setObjectName("HintLabel")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -195,11 +192,9 @@ class ModelsTab(QWidget):
             elif model.output_path:
                 local_path = model.output_path
             else:
-                from finetuner.core.paths import model_download_path
+                from finetuner.core.model_catalog import find_downloaded_model
 
-                p = model_download_path(model.identifier)
-                if p.exists():
-                    local_path = str(p)
+                local_path = find_downloaded_model(model.identifier)
 
             self.table.setItem(row, 0, QTableWidgetItem(model.name))
             self.table.setItem(row, 1, QTableWidgetItem(model.source.value))

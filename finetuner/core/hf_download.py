@@ -49,6 +49,13 @@ def download_hf_model(
         kwargs["tqdm_class"] = _make_tqdm_class(on_progress)
 
     snapshot_download(**kwargs)
+    from finetuner.core.artifacts import atomic_write_json
+    from finetuner.core.model_catalog import model_metadata_name
+
+    atomic_write_json(
+        dest_path / model_metadata_name(),
+        {"schema_version": 1, "repo_id": repo_id},
+    )
     if on_progress:
         on_progress(100, "Download complete")
     return dest_path

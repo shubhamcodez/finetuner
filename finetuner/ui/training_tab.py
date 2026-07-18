@@ -24,6 +24,7 @@ from finetuner.datasets.presets import DATASET_PRESETS, get_preset
 from finetuner.eval.tasks import EVAL_TASKS
 from finetuner.training.methods import TRAINING_METHODS
 from finetuner.training.rewards import REWARD_FUNCTIONS
+from finetuner.ui.pipeline_context import PipelineContextBar
 
 
 class TrainingTab(QWidget):
@@ -48,18 +49,18 @@ class TrainingTab(QWidget):
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
+
+        self.pipeline_context = PipelineContextBar()
+        layout.addWidget(self.pipeline_context)
 
         preset_group = QGroupBox("Ready-made Datasets")
         preset_layout = QVBoxLayout(preset_group)
         preset_layout.setSpacing(4)
 
-        preset_hint = QLabel(
-            "Pick a Hugging Face preset aligned with your eval, or use offline sample mode."
+        preset_group.setToolTip(
+            "Pick a Hugging Face preset aligned with an evaluation, or use its offline sample."
         )
-        preset_hint.setObjectName("HintLabel")
-        preset_hint.setWordWrap(True)
-        preset_layout.addWidget(preset_hint)
 
         preset_row = QHBoxLayout()
         preset_row.setSpacing(6)
@@ -102,6 +103,7 @@ class TrainingTab(QWidget):
         layout.addWidget(preset_group)
 
         dataset_group = QGroupBox("Custom Dataset Override")
+        self.dataset_group = dataset_group
         dataset_form = QFormLayout(dataset_group)
         dataset_form.setVerticalSpacing(4)
         dataset_form.setContentsMargins(0, 0, 0, 0)
@@ -119,8 +121,6 @@ class TrainingTab(QWidget):
         self.dataset_hf_edit.setPlaceholderText("e.g. tatsu-lab/alpaca (optional)")
         self.dataset_hf_edit.textChanged.connect(self._sync_config)
         dataset_form.addRow("HF Dataset ID", self.dataset_hf_edit)
-
-        layout.addWidget(dataset_group)
 
         method_group = QGroupBox("Optimization & Rewards")
         method_grid = QGridLayout(method_group)
@@ -148,13 +148,15 @@ class TrainingTab(QWidget):
             idx = self.reward_combo.count() - 1
             self.reward_combo.setItemData(idx, spec.description, Qt.ItemDataRole.ToolTipRole)
         self.reward_combo.currentIndexChanged.connect(self._on_reward_changed)
-        method_grid.addWidget(QLabel("Reward fn"), 2, 0)
+        self.reward_label = QLabel("Reward fn")
+        method_grid.addWidget(self.reward_label, 2, 0)
         method_grid.addWidget(self.reward_combo, 2, 1)
 
         self.reward_model_edit = QLineEdit()
         self.reward_model_edit.setPlaceholderText("HF reward model (PPO / HF reward fn)")
         self.reward_model_edit.textChanged.connect(self._sync_config)
-        method_grid.addWidget(QLabel("Reward model"), 2, 2)
+        self.reward_model_label = QLabel("Reward model")
+        method_grid.addWidget(self.reward_model_label, 2, 2)
         method_grid.addWidget(self.reward_model_edit, 2, 3)
 
         self.beta_spin = QDoubleSpinBox()
@@ -162,13 +164,15 @@ class TrainingTab(QWidget):
         self.beta_spin.setRange(0.001, 2.0)
         self.beta_spin.setSingleStep(0.01)
         self.beta_spin.valueChanged.connect(self._sync_config)
-        method_grid.addWidget(QLabel("Beta (DPO/KTO)"), 3, 0)
+        self.beta_label = QLabel("Beta (DPO/KTO)")
+        method_grid.addWidget(self.beta_label, 3, 0)
         method_grid.addWidget(self.beta_spin, 3, 1)
 
         self.num_gen_spin = QSpinBox()
         self.num_gen_spin.setRange(1, 16)
         self.num_gen_spin.valueChanged.connect(self._sync_config)
-        method_grid.addWidget(QLabel("GRPO gens"), 3, 2)
+        self.num_gen_label = QLabel("GRPO gens")
+        method_grid.addWidget(self.num_gen_label, 3, 2)
         method_grid.addWidget(self.num_gen_spin, 3, 3)
 
         self.kl_spin = QDoubleSpinBox()
@@ -176,7 +180,8 @@ class TrainingTab(QWidget):
         self.kl_spin.setRange(0.0, 1.0)
         self.kl_spin.setSingleStep(0.01)
         self.kl_spin.valueChanged.connect(self._sync_config)
-        method_grid.addWidget(QLabel("PPO KL coef"), 4, 0)
+        self.kl_label = QLabel("PPO KL coef")
+        method_grid.addWidget(self.kl_label, 4, 0)
         method_grid.addWidget(self.kl_spin, 4, 1)
 
         self.clip_spin = QDoubleSpinBox()
@@ -184,12 +189,21 @@ class TrainingTab(QWidget):
         self.clip_spin.setRange(0.05, 0.5)
         self.clip_spin.setSingleStep(0.05)
         self.clip_spin.valueChanged.connect(self._sync_config)
-        method_grid.addWidget(QLabel("PPO clip"), 4, 2)
+        self.clip_label = QLabel("PPO clip")
+        method_grid.addWidget(self.clip_label, 4, 2)
         method_grid.addWidget(self.clip_spin, 4, 3)
 
         layout.addWidget(method_group)
 
+        self.advanced_button = QPushButton("Show advanced settings")
+        self.advanced_button.setObjectName("SecondaryButton")
+        self.advanced_button.setCheckable(True)
+        self.advanced_button.toggled.connect(self._set_advanced_visible)
+        layout.addWidget(self.advanced_button)
+        layout.addWidget(dataset_group)
+
         params_group = QGroupBox("Training Hyperparameters")
+        self.params_group = params_group
         params_grid = QGridLayout(params_group)
         params_grid.setVerticalSpacing(4)
         params_grid.setHorizontalSpacing(12)
@@ -262,6 +276,7 @@ class TrainingTab(QWidget):
         layout.addWidget(params_group)
 
         settings_group = QGroupBox("Hugging Face Token (for gated models)")
+        self.settings_group = settings_group
         settings_form = QFormLayout(settings_group)
         settings_form.setVerticalSpacing(4)
         settings_form.setContentsMargins(0, 0, 0, 0)
@@ -270,6 +285,9 @@ class TrainingTab(QWidget):
         self.hf_token_edit.textChanged.connect(self._sync_config)
         settings_form.addRow("HF Token", self.hf_token_edit)
         layout.addWidget(settings_group)
+
+        self._set_advanced_visible(False)
+        layout.addStretch()
 
         scroll.setWidget(content)
         outer.addWidget(scroll)
@@ -322,8 +340,9 @@ class TrainingTab(QWidget):
         spec = TRAINING_METHODS.get(method_id)
         description = spec.description if spec else ""
         self.method_hint.setText(
-            f"{description}. A workflow stage's method parameter overrides this default."
+            f"{spec.name if spec else method_id.upper()} default; workflow stage settings override it."
         )
+        self.method_hint.setToolTip(description)
 
     def _update_method_fields(self) -> None:
         method_id = self.method_combo.currentData() or "sft"
@@ -333,14 +352,29 @@ class TrainingTab(QWidget):
         uses_grpo = method_id == "grpo"
         uses_ppo = method_id == "ppo"
 
-        self.reward_combo.setEnabled(uses_reward)
-        self.reward_model_edit.setEnabled(
-            uses_reward_model or self.reward_combo.currentData() == "hf_reward_model"
+        show_reward = uses_reward
+        show_reward_model = uses_reward_model or (
+            uses_reward and self.reward_combo.currentData() == "hf_reward_model"
         )
-        self.beta_spin.setEnabled(uses_beta)
-        self.num_gen_spin.setEnabled(uses_grpo)
-        self.kl_spin.setEnabled(uses_ppo)
-        self.clip_spin.setEnabled(uses_ppo)
+        for widget in (self.reward_label, self.reward_combo):
+            widget.setVisible(show_reward)
+        for widget in (self.reward_model_label, self.reward_model_edit):
+            widget.setVisible(show_reward_model)
+        for visible, widgets in (
+            (uses_beta, (self.beta_label, self.beta_spin)),
+            (uses_grpo, (self.num_gen_label, self.num_gen_spin)),
+            (uses_ppo, (self.kl_label, self.kl_spin, self.clip_label, self.clip_spin)),
+        ):
+            for widget in widgets:
+                widget.setVisible(visible)
+
+    def _set_advanced_visible(self, visible: bool) -> None:
+        self.dataset_group.setVisible(visible)
+        self.params_group.setVisible(visible)
+        self.settings_group.setVisible(visible)
+        self.advanced_button.setText(
+            "Hide advanced settings" if visible else "Show advanced settings"
+        )
 
     def _sync_preset_combo(self) -> None:
         preset_id = self.config.training.dataset_preset_id

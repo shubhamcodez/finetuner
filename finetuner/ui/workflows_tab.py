@@ -35,11 +35,8 @@ class WorkflowsTab(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(8)
-        intro = QLabel(
-            "Build a reproducible stage graph. Dependencies run in topological order and every "
-            "stage writes status, timing, metrics, and artifact lineage to the run manifest."
-        )
+        layout.setSpacing(6)
+        intro = QLabel("Choose a reusable graph; matching tool pages provide its shared settings.")
         intro.setObjectName("HintLabel")
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -67,17 +64,30 @@ class WorkflowsTab(QWidget):
         self.stage_table.setMaximumHeight(170)
         layout.addWidget(self.stage_table)
 
-        editor_label = QLabel("Workflow JSON (advanced editor)")
-        layout.addWidget(editor_label)
+        self.advanced_button = QPushButton("Show advanced JSON")
+        self.advanced_button.setObjectName("SecondaryButton")
+        self.advanced_button.setCheckable(True)
+        self.advanced_button.toggled.connect(self._toggle_editor)
+        layout.addWidget(self.advanced_button)
+        self.editor_label = QLabel("Workflow JSON")
+        layout.addWidget(self.editor_label)
         self.editor = QPlainTextEdit()
         self.editor.setObjectName("LogConsole")
         self.editor.setPlaceholderText("Workflow JSON")
-        layout.addWidget(self.editor, 1)
+        self.editor.setMaximumHeight(240)
+        layout.addWidget(self.editor)
+        self._toggle_editor(False)
 
         self.status = QLabel("")
         self.status.setObjectName("MutedLabel")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        layout.addStretch()
+
+    def _toggle_editor(self, visible: bool) -> None:
+        self.editor_label.setVisible(visible)
+        self.editor.setVisible(visible)
+        self.advanced_button.setText("Hide advanced JSON" if visible else "Show advanced JSON")
 
     def _load_template(self) -> None:
         workflow_id = self.template_combo.currentData()
@@ -96,7 +106,7 @@ class WorkflowsTab(QWidget):
             values = (
                 stage.name,
                 stage.kind.value,
-                ", ".join(stage.depends_on) or "—",
+                ", ".join(stage.depends_on) or "-",
                 json.dumps(stage.parameters, sort_keys=True),
             )
             for column, value in enumerate(values):

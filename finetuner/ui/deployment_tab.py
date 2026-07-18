@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from finetuner.core.job import ProjectConfig
 from finetuner.quantization.planner import detect_hardware
 from finetuner.quantization.specs import DeviceTarget, backend_specs, get_backend_spec
+from finetuner.ui.pipeline_context import PipelineContextBar
 
 
 class DeploymentTab(QWidget):
@@ -31,15 +32,17 @@ class DeploymentTab(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
-        intro = QLabel(
-            "Create target-specific deployment artifacts. GGUF covers broad CPU/GPU devices; "
-            "OpenVINO targets Intel CPU/GPU/NPU; ONNX Runtime targets installed execution providers."
-        )
+        layout.setSpacing(6)
+        self.pipeline_context = PipelineContextBar()
+        layout.addWidget(self.pipeline_context)
+        intro = QLabel("Create a quantized artifact matched to an inference backend and device.")
         intro.setObjectName("HintLabel")
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
         form = QFormLayout()
+        form.setVerticalSpacing(4)
+        self.form = form
         self.backend = QComboBox()
         for spec in backend_specs():
             self.backend.addItem(spec.name, spec.backend.value)
@@ -71,6 +74,8 @@ class DeploymentTab(QWidget):
         form.addRow("Group size", self.group_size)
         form.addRow("Calibration data", calibration_row)
         form.addRow("llama.cpp path", llama_row)
+        self.calibration_row = calibration_row
+        self.llama_row = llama_row
         layout.addLayout(form)
 
         row = QHBoxLayout()
@@ -113,6 +118,8 @@ class DeploymentTab(QWidget):
         desired = self.config.quantization.bits if current is None else current
         self.bits.setCurrentIndex(max(0, self.bits.findData(desired)))
         self.bits.blockSignals(False)
+        self.form.setRowVisible(self.calibration_row, spec.backend.value == "awq")
+        self.form.setRowVisible(self.llama_row, spec.backend.value == "gguf")
         self._sync()
 
     def _sync(self, _value=None) -> None:
@@ -125,7 +132,10 @@ class DeploymentTab(QWidget):
         q.llama_cpp_path = self.llama_path.text().strip()
         errors = q.validate()
         spec = get_backend_spec(q.backend)
-        self.status.setText("; ".join(errors) if errors else spec.description)
+        self.status.setText(
+            "; ".join(errors) if errors else f"Ready: {spec.name} -> {q.target.replace('_', ' ')}"
+        )
+        self.status.setToolTip(spec.description)
         self.config_changed.emit()
 
     def _browse_calibration(self) -> None:

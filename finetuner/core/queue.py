@@ -128,10 +128,14 @@ class JobQueue:
                 raise ValueError(msg)
             return path
 
+        from finetuner.core.model_catalog import find_downloaded_model
+
+        cached = find_downloaded_model(model.identifier)
+        if cached:
+            self.log(f"Using cached model at {cached}")
+            return Path(cached)
+
         dest = model_download_path(model.identifier)
-        if dest.exists() and (dest / "config.json").exists():
-            self.log(f"Using cached model at {dest}")
-            return dest
 
         self.log(f"Downloading {model.identifier}...")
         from finetuner.core.hf_download import download_hf_model

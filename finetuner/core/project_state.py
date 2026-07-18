@@ -59,19 +59,19 @@ def _dataset_summary(config: ProjectConfig) -> tuple[str, list[str]]:
 def _stage_summary(stage: WorkflowStage, config: ProjectConfig) -> str:
     if stage.kind == StageKind.TRAIN:
         method = stage.parameters.get("method", config.training.training_method)
-        return f"{str(method).upper()} · {config.training.max_steps} steps"
+        return f"{str(method).upper()} | {config.training.max_steps} steps"
     if stage.kind == StageKind.DISTILL:
         domain = config.distillation.domain
         scope = domain.custom if domain.mode == "custom" else domain.mode
-        return f"{config.distillation.technique} · {scope}"
+        return f"{config.distillation.technique} | {scope}"
     if stage.kind == StageKind.QUANTIZE:
         quant = config.quantization
-        return f"{quant.backend.upper()} {quant.bits}-bit · {quant.target.replace('_', ' ')}"
+        return f"{quant.backend.upper()} {quant.bits}-bit | {quant.target.replace('_', ' ')}"
     if stage.kind == StageKind.EVALUATE:
         tasks = stage.parameters.get("task_ids", config.enabled_evals)
         return f"{len(tasks)} benchmark{'s' if len(tasks) != 1 else ''}"
     if stage.kind == StageKind.ANALYZE:
-        return f"{config.analysis.reducer.upper()} · {config.analysis.pooling} pooling"
+        return f"{config.analysis.reducer.upper()} | {config.analysis.pooling} pooling"
     return stage.kind.value
 
 
@@ -125,7 +125,7 @@ def build_project_snapshot(config: ProjectConfig) -> ProjectSnapshot:
         ProjectAreaState(
             "distillation",
             "Distillation",
-            f"{config.distillation.teacher_model or 'Teacher unset'} → "
+            f"{config.distillation.teacher_model or 'Teacher unset'} -> "
             f"{config.distillation.student_model or 'student unset'}",
             StageKind.DISTILL in included_kinds,
             not by_area.get("distillation"),

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QLabel,
     QLineEdit,
@@ -15,8 +16,10 @@ from PySide6.QtWidgets import (
 )
 
 from finetuner.core.job import ProjectConfig
+from finetuner.core.model_catalog import discover_downloaded_models
 from finetuner.distillation.config import DistillationTechnique
 from finetuner.distillation.domains import DOMAIN_PRESETS
+from finetuner.ui.pipeline_context import PipelineContextBar
 
 
 class DistillationTab(QWidget):
@@ -32,19 +35,29 @@ class DistillationTab(QWidget):
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(6)
+        self.pipeline_context = PipelineContextBar()
+        layout.addWidget(self.pipeline_context)
         intro = QLabel(
-            "Distill any local/Hugging Face teacher into a smaller student. Sequence KD works "
-            "across model families; logit and on-policy GKD require compatible tokenizers."
+            "Transfer a teacher into a smaller student; tokenizer compatibility depends on technique."
         )
         intro.setObjectName("HintLabel")
         intro.setWordWrap(True)
         layout.addWidget(intro)
 
         form = QFormLayout()
+        form.setVerticalSpacing(4)
+        self.form = form
         self.teacher = QComboBox()
         self.teacher.setEditable(True)
+        self.teacher.lineEdit().setPlaceholderText(
+            "Select a downloaded model or enter a Hugging Face ID/path"
+        )
         self.student = QComboBox()
         self.student.setEditable(True)
+        self.student.lineEdit().setPlaceholderText(
+            "Select a downloaded model or enter a Hugging Face ID/path"
+        )
         self.technique = QComboBox()
         techniques = (
             ("Sequence KD (portable)", DistillationTechnique.SEQUENCE.value),
@@ -76,12 +89,13 @@ class DistillationTab(QWidget):
         layout.addLayout(form)
 
         domains = QGroupBox("Field presets")
-        domain_layout = QVBoxLayout(domains)
-        for domain_id, preset in DOMAIN_PRESETS.items():
+        domain_layout = QGridLayout(domains)
+        domain_layout.setVerticalSpacing(3)
+        for index, (domain_id, preset) in enumerate(DOMAIN_PRESETS.items()):
             check = QCheckBox(preset.name)
             check.toggled.connect(self._sync)
             self.domain_checks[domain_id] = check
-            domain_layout.addWidget(check)
+            domain_layout.addWidget(check, index // 3, index % 3)
         layout.addWidget(domains)
         self.domain_group = domains
         self.status = QLabel("")
@@ -90,7 +104,7 @@ class DistillationTab(QWidget):
         layout.addWidget(self.status)
         layout.addStretch()
 
-        for widget in (self.teacher, self.student, self.technique, self.domain_mode):
+        for widget in (self.technique, self.domain_mode):
             widget.currentIndexChanged.connect(self._sync)
         self.teacher.currentTextChanged.connect(self._sync)
         self.student.currentTextChanged.connect(self._sync)
@@ -104,9 +118,38 @@ class DistillationTab(QWidget):
         for combo, current in ((self.teacher, current_teacher), (self.student, current_student)):
             combo.blockSignals(True)
             combo.clear()
-            combo.addItems([model.identifier for model in self.config.models])
-            combo.setCurrentText(current)
+            values: set[str] = set()
+            downloaded_aliases: dict[str, str] = {}
+            for model in discover_downloaded_models():
+                combo.addItem(f"Downloaded | {model.name}", model.path)
+                combo.setItemData(combo.count() - 1, model.path, Qt.ItemDataRole.ToolTipRole)
+                values.add(model.path.casefold())
+                if model.source_id:
+                    values.add(model.source_id.casefold())
+                    downloaded_aliases[model.source_id.casefold()] = model.path
+            for model in self.config.models:
+                value = model.output_path or model.identifier
+                if not value or value.casefold() in values or model.identifier.casefold() in values:
+                    continue
+                combo.addItem(f"Queue | {model.name}", value)
+                combo.setItemData(combo.count() - 1, value, Qt.ItemDataRole.ToolTipRole)
+                values.add(value.casefold())
+            selected_value = downloaded_aliases.get(current.casefold(), current)
+            selected = combo.findData(selected_value)
+            if selected >= 0:
+                combo.setCurrentIndex(selected)
+            else:
+                combo.setCurrentText(current)
             combo.blockSignals(False)
+
+    @staticmethod
+    def _selected_model(combo: QComboBox) -> str:
+        index = combo.currentIndex()
+        if index >= 0 and combo.currentText() == combo.itemText(index):
+            value = combo.itemData(index)
+            if value:
+                return str(value)
+        return combo.currentText().strip()
 
     def _load_config(self) -> None:
         self._load_models()
@@ -126,20 +169,17 @@ class DistillationTab(QWidget):
 
     def _sync(self, _value=None) -> None:
         d = self.config.distillation
-        d.teacher_model = self.teacher.currentText().strip()
-        d.student_model = self.student.currentText().strip()
+        d.teacher_model = self._selected_model(self.teacher)
+        d.student_model = self._selected_model(self.student)
         d.technique = self.technique.currentData() or "sequence"
         d.domain.mode = self.domain_mode.currentData() or "all"
         d.domain.custom = self.custom_domain.text().strip()
         d.domain.fields = [key for key, check in self.domain_checks.items() if check.isChecked()]
         d.max_samples = self.max_samples.value()
         d.temperature = self.temperature.value()
-        self.domain_group.setEnabled(d.domain.mode == "presets")
+        self.domain_group.setVisible(d.domain.mode == "presets")
+        self.form.setRowVisible(self.custom_domain, d.domain.mode == "custom")
         self.custom_domain.setEnabled(d.domain.mode == "custom")
         errors = d.validate()
-        self.status.setText(
-            "; ".join(errors)
-            if errors
-            else "Ready. Select the “Distill, evaluate, and deploy” workflow to run this pipeline."
-        )
+        self.status.setText("; ".join(errors) if errors else "Ready for a Distill stage.")
         self.config_changed.emit()

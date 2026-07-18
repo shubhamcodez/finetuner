@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QFrame,
@@ -19,6 +19,8 @@ from finetuner.ui.theme import Theme
 
 
 class ResultsTab(QWidget):
+    artifact_requested = Signal(str, str)
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._results: list[ModelRunResult] = []
@@ -37,10 +39,6 @@ class ResultsTab(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
 
-        intro = QLabel("Compare models across eval benchmarks.")
-        intro.setObjectName("HintLabel")
-        layout.addWidget(intro)
-
         self.summary_frame = QFrame()
         self.summary_frame.setObjectName("SummaryBanner")
         summary_layout = QVBoxLayout(self.summary_frame)
@@ -57,6 +55,7 @@ class ResultsTab(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.verticalHeader().setDefaultSectionSize(24)
         self.table.setMinimumHeight(120)
+        self.table.itemDoubleClicked.connect(self._open_artifact)
         layout.addWidget(self.table)
         layout.addStretch()
 
@@ -85,12 +84,8 @@ class ResultsTab(QWidget):
                 if e.task_id not in task_ids:
                     task_ids.append(e.task_id)
 
-        if not task_ids:
-            for tid in EVAL_TASKS:
-                if tid not in task_ids:
-                    task_ids.append(tid)
-
         headers = ["Model"] + [EVAL_TASKS[t].name if t in EVAL_TASKS else t for t in task_ids]
+        headers += ["Policy", "Analysis", "Deployment"]
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
         self.table.setRowCount(len(self._results))
@@ -123,7 +118,11 @@ class ResultsTab(QWidget):
                     if e.task_id == task_id:
                         score = e.score
                         break
-                text = f"{score:.1f}%" if score is not None else ("ERR" if result.training_error else "—")
+                text = (
+                    f"{score:.1f}%"
+                    if score is not None
+                    else ("ERR" if result.training_error else "-")
+                )
                 item = QTableWidgetItem(text)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -135,6 +134,21 @@ class ResultsTab(QWidget):
                     item.setFont(font)
                 self.table.setItem(row, col, item)
 
+            artifact_start = 1 + len(task_ids)
+            artifacts = (
+                ("models", result.output_path),
+                ("analysis", result.analysis_path),
+                ("deployment", result.deployment_path),
+            )
+            for offset, (area, path) in enumerate(artifacts):
+                item = QTableWidgetItem("Ready" if path else "-")
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if path:
+                    item.setToolTip(f"Double-click to open\n{path}")
+                    item.setData(Qt.ItemDataRole.UserRole, (area, path))
+                self.table.setItem(row, artifact_start + offset, item)
+
         summary_lines = []
         for task_id, (row, score) in best_per_task.items():
             name = EVAL_TASKS[task_id].name if task_id in EVAL_TASKS else task_id
@@ -145,5 +159,11 @@ class ResultsTab(QWidget):
             self.summary_label.setText("\n".join(summary_lines))
             self.summary_frame.setVisible(True)
         else:
-            self.summary_label.setText("Training finished — eval scores pending or unavailable.")
+            self.summary_label.setText("Run finished; evaluation scores are unavailable.")
             self.summary_frame.setVisible(True)
+
+    def _open_artifact(self, item: QTableWidgetItem) -> None:
+        destination = item.data(Qt.ItemDataRole.UserRole)
+        if destination:
+            area, path = destination
+            self.artifact_requested.emit(area, path)

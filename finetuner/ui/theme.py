@@ -321,6 +321,22 @@ QLabel {{
     font-weight: 500;
     font-size: 11px;
 }}
+#PipelineContext {{
+    background-color: {Theme.SURFACE_ALT};
+    border: 1px solid {Theme.BORDER};
+    border-radius: 6px;
+}}
+QPushButton#ContextButton {{
+    background: transparent;
+    border: none;
+    color: {Theme.PRIMARY};
+    padding: 2px 6px;
+    min-height: 12px;
+}}
+QPushButton#ContextButton:hover {{
+    color: {Theme.TEXT};
+    background-color: {Theme.SURFACE_RAISED};
+}}
 
 QScrollArea {{
     border: none;
