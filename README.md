@@ -4,6 +4,10 @@ Finetuner is a local desktop workbench for reproducible LLM post-training. Train
 optimization, knowledge distillation, evaluation, representation analysis, target-aware compression,
 and inference-engine optimization each run as their own tool.
 
+**Using the app:** start with the [user guide](docs/USER_GUIDE.md). It covers install, the first
+run, every tab, dataset formats, hardware pairing, and troubleshooting. Architecture and research
+notes live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/RESEARCH.md](docs/RESEARCH.md).
+
 ## Product capabilities
 
 - Independent tools: train, distill, evaluate, analyze, quantize, and optimize inference without a
@@ -73,7 +77,8 @@ Each tool run writes `manifest.json` incrementally and atomically. The manifest 
 and a digest of the redacted project configuration. Hugging Face tokens are held in memory or
 read from `HF_TOKEN`; they are intentionally not written to `config.json` or run manifests.
 
-See [the architecture](docs/ARCHITECTURE.md) and [research rationale](docs/RESEARCH.md).
+See the [user guide](docs/USER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), and
+[research rationale](docs/RESEARCH.md).
 
 ## Build the Windows installer
 
