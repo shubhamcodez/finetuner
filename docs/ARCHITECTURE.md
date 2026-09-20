@@ -17,6 +17,7 @@ flowchart LR
     KD --> ART
     Q --> ART
     OPT --> ART
+    OPT --> SERVE["http://127.0.0.1:1234"]
     EVAL --> ART
     ANA --> ART
     ACT --> MAN["Atomic run manifest"]
@@ -34,7 +35,7 @@ inference optimization.
 - `eval_results`: structured benchmark results
 - `analysis`: `representations.json` with layer points, metrics, and CKA matrix
 - `deployment_model`: a target-specific compressed artifact directory
-- `inference_engine`: a validated serve/compile plan (`inference_plan.json`) plus an optional compiled engine and `device_bind` probe for NVIDIA GPU, AMD GPU, or NPU
+- `inference_engine`: a validated serve/compile plan (`inference_plan.json`) plus an optional compiled engine and `device_bind` probe. Target `auto` is resolved at run time to the highest-ranked specialist that is present and artifact-ready. After load (or after optimize) Finetuner binds that recipe at `http://127.0.0.1:1234`. Skipping optimize uses a portable CPU recipe on the same port.
 - `distillation_manifest`: teacher/data-generation provenance
 
 ## Reliability boundaries

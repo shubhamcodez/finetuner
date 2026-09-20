@@ -62,6 +62,13 @@ def recommended_config(
     *,
     vllm_available: bool | None = None,
 ) -> InferenceOptimizationConfig:
+    if target == DeviceTarget.AUTO:
+        from finetuner.inference.devices import select_best_runtime
+
+        return select_best_runtime(
+            memory_gb=memory_gb,
+            vllm_available=vllm_available,
+        ).recipe.inference
     if target == DeviceTarget.QUALCOMM_NPU:
         return InferenceOptimizationConfig(
             engine=InferenceEngine.ONNXRUNTIME.value,

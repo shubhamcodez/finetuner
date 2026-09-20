@@ -20,11 +20,10 @@ notes live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/RESEARCH.md
   safety, arbitrary custom topics, or all data
 - GGUF, OpenVINO INT4/INT8, ONNX Runtime INT8, and AWQ deployment pipelines with an explicit
   backend/device compatibility matrix
-- Inference-engine optimization for llama.cpp, vLLM, TensorRT-LLM, OpenVINO, ONNX Runtime, and TGI:
-  KV-cache dtype, context/batch, tensor parallelism, prefix caching, CUDA graphs, and optional
-  ahead-of-time compile/cache plans matched to the same device matrix. One-button recipes bind
-  NVIDIA CUDA (vLLM or llama.cpp), AMD (llama.cpp Vulkan/HIP), Intel NPU (OpenVINO), and Qualcomm
-  Hexagon NPU (ONNX Runtime QNN/HTP)
+- Adaptive inference: after a model is loaded, Finetuner detects this device and asks whether to
+  optimize. Yes picks the strongest specialist (vLLM/llama.cpp CUDA, llama.cpp Vulkan/Metal/CPU,
+  OpenVINO, or QNN/HTP) and then serves the model. No serves the artifact as-is. Either way the
+  model is bound at http://127.0.0.1:1234. One-button NVIDIA / AMD / NPU overrides still exist.
 - PCA, t-SNE, or UMAP hidden-state projections by layer, activation norms, attention entropy, and
   cross-layer centered-kernel alignment (CKA)
 - Atomic run manifests containing stage status, duration, metrics, configuration digest, and artifact
@@ -34,10 +33,10 @@ notes live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/RESEARCH.md
 Finetuner does not claim that one artifact runs optimally on every accelerator. Deployment is planned
 against a concrete runtime and device: GGUF for broad CPU/GPU support, OpenVINO for supported Intel
 CPU/GPU/NPU systems, ONNX Runtime INT8 for CPU, and AWQ for compatible NVIDIA inference stacks.
-Serving is planned the same way: llama.cpp for GGUF on CPU and AMD/Apple/NVIDIA GPUs, vLLM or
-TensorRT-LLM for NVIDIA Hugging Face/AWQ artifacts, OpenVINO for Intel IR, ONNX Runtime for CPU ONNX
-graphs, ONNX Runtime QNN/HTP for Qualcomm NPUs, and TGI for Hugging Face serving. Unsupported
-combinations are rejected before conversion or compilation.
+Serving uses that specialist when you optimize, or a portable CPU recipe when you skip. The live
+server is always http://127.0.0.1:1234 (llama-server / vLLM / TGI when the CLI is present, otherwise
+a built-in OpenAI-compatible fallback). Unsupported combinations are rejected before conversion or
+compilation.
 
 ## Development
 

@@ -54,7 +54,7 @@ The window has a header status badge, product tabs, and a **Run Console** at the
 | **Evaluation** | Benchmarks (MMLU, GSM8K, HellaSwag, ARC Challenge). |
 | **Analysis** | Hidden-state projections, activation norms, attention entropy, CKA. |
 | **Deployment** | Quantize a queued model for a concrete backend and device. |
-| **Inference** | Plan or compile a serving engine; one-button device recipes. |
+| **Inference** | Detect device, optional optimize, then serve on port 1234. |
 | **Results** | Per-model scores and artifact links from the latest run. |
 | **System** | Live CPU, RAM, and NVIDIA GPU utilization. |
 
@@ -85,11 +85,12 @@ Each completed tool writes a `manifest.json` with stage status, duration, metric
 This is the shortest path that exercises the product without a large download.
 
 1. Launch Finetuner. Two small instruct models are already queued: `Qwen/Qwen2.5-0.5B-Instruct` and `Qwen/Qwen2-0.5B-Instruct`.
-2. On **Models**, select one row and click **Download Selected**. Wait until **Local Path** is filled.
-3. On **Data & Train**, pick **Bundled sample (smoke test)** or another preset and check **Use offline sample only**.
-4. Leave the method on **SFT**.
-5. Click **Run training**.
-6. Open **Results** when the console says the run finished. Policy output is under `runs\`.
+2. On **Models**, select one row and click **Download Selected**. Wait until **Local Path** is filled. Finetuner detects this device and asks **Optimize for your device?**
+3. Choose **Optimize and serve** or **Serve without optimizing**. The model is bound at `http://127.0.0.1:1234`.
+4. On **Data & Train**, pick **Bundled sample (smoke test)** or another preset and check **Use offline sample only**.
+5. Leave the method on **SFT**.
+6. Click **Run training**.
+7. Open **Results** when the console says the run finished. Policy output is under `runs\`.
 
 For a real experiment, download a model, pick a full preset (not the bundled sample), and raise **Max steps** under advanced settings.
 
@@ -100,7 +101,9 @@ Queued models are the input for training, evaluation, analysis, deployment, and 
 **Add Model** accepts:
 
 - **Hugging Face** — a repo id such as `Qwen/Qwen2.5-0.5B-Instruct`. Download it here, or let a later run pull it.
-- **Local Path** — a folder that already looks like a Hugging Face checkpoint (config + weights). The dialog validates the folder before it is queued.
+- **Local Path** — a Hugging Face checkpoint folder, a folder of `.gguf` / `.onnx` weights, or a single GGUF/ONNX file.
+
+After the weights are on disk, Finetuner detects this machine and asks whether to optimize before serving on port 1234. **Not now** only queues the model.
 
 Give gated models a token on **Data & Train** (advanced settings) or set `HF_TOKEN` in the environment.
 
@@ -272,7 +275,9 @@ To serve a quantized model later, queue the output folder as a local model and o
 
 ## Inference
 
-Quantization chooses the weight format. This tab chooses **how the model is served**.
+Quantization chooses the weight format. This tab chooses **how the model is served**. Loading a model already offers that choice; this tab is the manual override.
+
+The live endpoint is always **`http://127.0.0.1:1234`** (`/health`, `/v1/models`, `/v1/chat/completions`). **Serve without optimizing** binds the current artifact as-is. **Optimize and serve** / **Run best engine for this machine** picks the specialist, converts if needed, then binds the same port. **Stop server** releases it.
 
 Engines and the artifacts they consume:
 
@@ -287,15 +292,19 @@ Engines and the artifacts they consume:
 
 Tune KV-cache dtype, max context, max batch, tensor parallel, GPU memory fraction, speculative tokens, prefix cache, CUDA graphs, and flash attention. **Compile or cache an engine artifact** is only enabled for engines that build ahead of time (TensorRT-LLM, OpenVINO, ONNX Runtime).
 
-**Recommend** fills settings for the selected device. **Detect This Device** refreshes the one-button recipes:
+**Run best engine for this machine** detects hardware and picks the strongest specialist that can actually run the current artifact:
 
-- **Run on NVIDIA GPU** — vLLM or llama.cpp
-- **Run on AMD GPU** — llama.cpp (Vulkan/HIP)
-- **Run on NPU** — OpenVINO (Intel) or ONNX Runtime QNN/HTP (Qualcomm)
+- NVIDIA GPU → vLLM (or llama.cpp CUDA if vLLM is missing)
+- AMD GPU → llama.cpp (Vulkan/HIP)
+- Intel NPU / GPU → OpenVINO
+- Qualcomm Hexagon NPU → QNN/HTP **only** if the model is a context-binary / QNN genai package
+- Otherwise → llama.cpp on CPU (the portable floor; on Snapdragon X Elite this was the fastest decode we measured)
 
-A recipe also updates **Deployment** so the weight format matches the engine. The run writes `inference_plan.json` (serve/compile plan) and an optional compiled engine plus a `device_bind` probe. **Load Plan...** opens a previous plan.
+Overrides: **Run on NVIDIA GPU**, **Run on AMD GPU**, **Run on NPU**. **Recommend** with **Best for this machine** fills the same choice without starting a run. A recipe also updates **Deployment** so the weight format matches the engine.
 
-Finetuner does not claim one artifact is optimal on every accelerator. Mismatched backend/engine pairs are rejected up front.
+The run writes `inference_plan.json` (serve/compile plan) and an optional compiled engine plus a `device_bind` probe. **Load Plan...** opens a previous plan.
+
+There is no single kernel that is fastest on Hexagon, CUDA, and Apple GPU. The adaptive engine is a dispatcher, not a universal graph. Generic ONNX INT4/INT8 is not a Qualcomm HTP package. vLLM does not load GGUF. llama.cpp does not load OpenVINO IR.
 
 ## Results and System
 

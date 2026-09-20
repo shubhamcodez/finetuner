@@ -53,11 +53,14 @@ class AddModelDialog(QDialog):
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("Display name (optional)")
 
-        self.browse_btn = QPushButton("Browse...")
+        self.browse_btn = QPushButton("Folder...")
         self.browse_btn.clicked.connect(self._browse)
+        self.browse_file_btn = QPushButton("GGUF / ONNX...")
+        self.browse_file_btn.clicked.connect(self._browse_file)
         id_row = QHBoxLayout()
         id_row.addWidget(self.identifier_edit)
         id_row.addWidget(self.browse_btn)
+        id_row.addWidget(self.browse_file_btn)
 
         layout.addRow("Source", self.source_combo)
         layout.addRow("Identifier / Path", id_row)
@@ -76,13 +79,21 @@ class AddModelDialog(QDialog):
     def _on_source_changed(self, index: int) -> None:
         is_local = index == 1
         self.browse_btn.setVisible(is_local)
+        self.browse_file_btn.setVisible(is_local)
         if is_local:
-            self.identifier_edit.setPlaceholderText("C:\\models\\my-model")
+            self.identifier_edit.setPlaceholderText("C:\\models\\my-model or model.gguf")
         else:
             self.identifier_edit.setPlaceholderText(DEFAULT_MODEL_ID)
 
     def _browse(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select Model Folder")
+        if path:
+            self.identifier_edit.setText(path)
+
+    def _browse_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Model File", "", "Models (*.gguf *.onnx);;All files (*)"
+        )
         if path:
             self.identifier_edit.setText(path)
 
@@ -113,6 +124,7 @@ class AddModelDialog(QDialog):
 
 class ModelsTab(QWidget):
     config_changed = Signal()
+    model_ready = Signal(object)
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -134,7 +146,10 @@ class ModelsTab(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
 
-        hint = QLabel("Queued models are the input for training, evaluation, analysis, deployment, and inference.")
+        hint = QLabel(
+            "Queued models are the input for training, evaluation, analysis, deployment, and inference. "
+            "After a model is on disk, Finetuner detects this device and asks whether to optimize before serving on port 1234."
+        )
         hint.setObjectName("HintLabel")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -212,6 +227,7 @@ class ModelsTab(QWidget):
             self.config.models.append(model)
             self.refresh_table()
             self.config_changed.emit()
+            self.model_ready.emit(model)
 
     def _remove_selected(self) -> None:
         rows = sorted({i.row() for i in self.table.selectedIndexes()}, reverse=True)
@@ -262,6 +278,7 @@ class ModelsTab(QWidget):
         self.status_label.setText(f"Download complete: {path}")
         self.refresh_table()
         self.config_changed.emit()
+        self.model_ready.emit(self.config.models[row])
 
     def _on_download_failed(self, error: str) -> None:
         self.download_btn.setEnabled(True)

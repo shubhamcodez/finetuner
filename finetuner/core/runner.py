@@ -107,9 +107,21 @@ def run_quantize(context: ActionContext) -> ActionOutput:
 
 
 def run_optimize(context: ActionContext) -> ActionOutput:
+    from finetuner.inference.devices import apply_best_runtime
     from finetuner.inference.runner import optimize_inference_engine
+    from finetuner.quantization.specs import DeviceTarget
 
     config = context.project_config.inference
+    if config.target == DeviceTarget.AUTO.value:
+        choice = apply_best_runtime(
+            context.project_config,
+            model_path=context.model_path,
+            run_on_device=bool((config.extra_options or {}).get("run_on_device")),
+        )
+        context.log(choice.reason)
+        for skipped in choice.skipped:
+            context.log(skipped)
+        config = context.project_config.inference
     optimized = optimize_inference_engine(
         context.model_path,
         str(context.run_dir / "optimize"),

@@ -72,6 +72,48 @@ class QueueWorker(QThread):
         self.finished_all.emit(results)
 
 
+class ServeWorker(QThread):
+    log_line = Signal(str)
+    ready = Signal(object)
+    failed = Signal(str)
+
+    def __init__(
+        self,
+        config: ProjectConfig,
+        model_path: str,
+        *,
+        optimize: bool,
+        plan_dir: str = "",
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.config = config
+        self.model_path = model_path
+        self.optimize = optimize
+        self.plan_dir = plan_dir
+
+    def run(self) -> None:
+        from finetuner.core.paths import runs_dir
+        from finetuner.inference.serve import launch_from_plan, launch_inference_server
+
+        try:
+            if self.plan_dir:
+                status = launch_from_plan(
+                    self.plan_dir, self.config, log=lambda msg: self.log_line.emit(msg)
+                )
+            else:
+                status = launch_inference_server(
+                    self.model_path,
+                    str(runs_dir() / "serve"),
+                    self.config,
+                    optimize=self.optimize,
+                    log=lambda msg: self.log_line.emit(msg),
+                )
+            self.ready.emit(status)
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -82,6 +124,7 @@ class MainWindow(QMainWindow):
 
         self.config = load_config()
         self._worker: QueueWorker | None = None
+        self._serve_worker: ServeWorker | None = None
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -166,7 +209,10 @@ class MainWindow(QMainWindow):
         self.analysis_tab.run_requested.connect(lambda: self._start_run(ActionKind.ANALYZE.value))
         self.deployment_tab.run_requested.connect(lambda: self._start_run(ActionKind.QUANTIZE.value))
         self.inference_tab.run_requested.connect(lambda: self._start_run(ActionKind.OPTIMIZE.value))
+        self.inference_tab.serve_requested.connect(self._serve_queued_model)
+        self.inference_tab.stop_requested.connect(self._stop_server)
         self.inference_tab.quantization_changed.connect(self.deployment_tab.reload_from_config)
+        self.models_tab.model_ready.connect(self._on_model_ready)
         self.tabs.currentChanged.connect(self._update_run_button)
         self._update_run_button()
 
@@ -346,7 +392,7 @@ class MainWindow(QMainWindow):
         if result.inference_path:
             self.inference_tab.set_artifact(result.inference_path)
 
-    def _on_finished(self, _results: list) -> None:
+    def _on_finished(self, results: list) -> None:
         self.cancel_btn.setEnabled(False)
         self.run_progress.setVisible(False)
         self.run_progress.setValue(0)
@@ -354,6 +400,119 @@ class MainWindow(QMainWindow):
         self.project_tab.set_running(False)
         self._update_run_button()
         self._append_log("Run finished.")
+        inference_path = next(
+            (result.inference_path for result in results if getattr(result, "inference_path", "")),
+            "",
+        )
+        if inference_path:
+            from finetuner.inference.serve import current_server
+
+            if current_server() is None:
+                self._start_serve(
+                    "", optimize=False, plan_dir=inference_path, ignore_queue=True
+                )
+
+    def _on_model_ready(self, model) -> None:
+        from pathlib import Path
+
+        from finetuner.inference.serve import resolved_model_path
+
+        path = resolved_model_path(model)
+        if not path or not Path(path).exists():
+            return
+        self._offer_serve(path)
+
+    def _offer_serve(self, model_path: str) -> None:
+        from finetuner.inference.devices import describe_device_offer
+
+        offer = describe_device_offer(model_path)
+        box = QMessageBox(self)
+        box.setWindowTitle(offer.title)
+        box.setText(offer.message)
+        optimize_btn = box.addButton(
+            "Optimize and serve", QMessageBox.ButtonRole.AcceptRole
+        )
+        plain_btn = box.addButton(
+            "Serve without optimizing", QMessageBox.ButtonRole.ActionRole
+        )
+        box.addButton("Not now", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is optimize_btn:
+            self.tabs.setCurrentWidget(self.inference_tab)
+            self._start_serve(model_path, optimize=True)
+        elif clicked is plain_btn:
+            self.tabs.setCurrentWidget(self.inference_tab)
+            self._start_serve(model_path, optimize=False)
+
+    def _serve_queued_model(self, optimize: bool) -> None:
+        from pathlib import Path
+
+        from finetuner.inference.serve import resolved_model_path
+
+        for model in reversed(self.config.models):
+            path = resolved_model_path(model)
+            if path and Path(path).exists():
+                self._start_serve(path, optimize=optimize)
+                return
+        QMessageBox.information(
+            self,
+            "Serve",
+            "Add or download a model first. Finetuner serves it on port 1234.",
+        )
+
+    def _start_serve(
+        self,
+        model_path: str,
+        *,
+        optimize: bool,
+        plan_dir: str = "",
+        ignore_queue: bool = False,
+    ) -> None:
+        if not ignore_queue and self._worker and self._worker.isRunning():
+            QMessageBox.information(
+                self, "Serve", "Wait for the current tool run to finish before serving."
+            )
+            return
+        if self._serve_worker and self._serve_worker.isRunning():
+            return
+        self._save_config()
+        self._append_log("Starting local inference server on port 1234")
+        self.status_label.setText("Starting server")
+        self._serve_worker = ServeWorker(
+            self.config, model_path, optimize=optimize, plan_dir=plan_dir, parent=self
+        )
+        self._serve_worker.log_line.connect(self._append_log)
+        self._serve_worker.ready.connect(self._on_serve_ready)
+        self._serve_worker.failed.connect(self._on_serve_failed)
+        self._serve_worker.start()
+
+    def _on_serve_ready(self, status) -> None:
+        self.inference_tab._load_config()
+        self.deployment_tab.reload_from_config()
+        detail = f"{status.backend} / {status.engine} on {status.target.replace('_', ' ')}"
+        if status.optimized:
+            detail += " (optimized)"
+        else:
+            detail += " (not optimized)"
+        self.inference_tab.set_serve_status(status.url, detail)
+        self.status_label.setText(f"Serving :{status.port}")
+        self._append_log(f"Model is serving at {status.url}")
+        self._save_config()
+
+    def _on_serve_failed(self, error: str) -> None:
+        self.inference_tab.set_serve_status("", f"Serve failed: {error}")
+        self.status_label.setText("Serve failed")
+        self._append_log(f"Serve failed: {error}")
+        QMessageBox.warning(self, "Serve failed", error)
+
+    def _stop_server(self) -> None:
+        from finetuner.inference.serve import stop_server
+
+        stop_server()
+        self.inference_tab.set_serve_status("")
+        self.status_label.setText("Ready")
+        self._append_log("Stopped local inference server")
 
     def closeEvent(self, event) -> None:
         if self._worker and self._worker.isRunning():
@@ -369,6 +528,11 @@ class MainWindow(QMainWindow):
             self._worker.cancel()
             self._worker.wait(5000)
 
+        from finetuner.inference.serve import stop_server
+
+        stop_server()
+        if self._serve_worker and self._serve_worker.isRunning():
+            self._serve_worker.wait(3000)
         self.monitor_tab.shutdown()
         self._save_config()
         super().closeEvent(event)

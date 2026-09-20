@@ -136,6 +136,7 @@ def build_serve_command(
             command.extend(["--cache-type-v", config.kv_cache_dtype])
         if config.prefix_caching:
             command.append("--prompt-cache-all")
+        command.extend(["--host", "127.0.0.1", "--port", str(config.serve_port)])
         return command
 
     if engine == InferenceEngine.VLLM:
@@ -143,6 +144,10 @@ def build_serve_command(
             _resolve_tool("vllm", config.toolchain_path),
             "serve",
             model,
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(config.serve_port),
             "--max-model-len",
             str(config.max_context),
             "--max-num-seqs",
@@ -166,6 +171,10 @@ def build_serve_command(
         return [
             _resolve_tool("trtllm-serve", config.toolchain_path),
             str(Path(output_dir).resolve() / "engine"),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(config.serve_port),
             "--max_batch_size",
             str(config.max_batch_size),
         ]
@@ -175,6 +184,10 @@ def build_serve_command(
             _resolve_tool("text-generation-launcher", config.toolchain_path),
             "--model-id",
             model,
+            "--hostname",
+            "127.0.0.1",
+            "--port",
+            str(config.serve_port),
             "--max-total-tokens",
             str(config.max_context),
             "--max-concurrent-requests",
@@ -467,6 +480,8 @@ def optimize_inference_engine(
         "optimization": config.to_dict(),
         "runtime_options": runtime_options(model_path, str(output), config),
         "serve_command": [Path(serve[0]).name, *serve[1:]] if serve else [],
+        "serve_url": f"http://127.0.0.1:{config.serve_port}",
+        "serve_port": config.serve_port,
         "compile_commands": [
             [Path(command[0]).name, *command[1:]] for command in compile_commands
         ],

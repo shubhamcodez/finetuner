@@ -12,12 +12,14 @@ def test_config_round_trip_includes_product_pipelines():
     config.analysis.reducer = "tsne"
     config.inference.engine = "vllm"
     config.inference.target = "nvidia_gpu"
+    config.inference.serve_port = 1234
     config.training.lora_target_modules = ["q_proj", "v_proj"]
     restored = ProjectConfig.from_dict(config.to_dict())
     assert restored.quantization.target == "intel_npu"
     assert restored.distillation.teacher_model == "teacher/model"
     assert restored.analysis.reducer == "tsne"
     assert restored.inference.engine == "vllm"
+    assert restored.inference.serve_port == 1234
     assert restored.training.lora_target_modules == ["q_proj", "v_proj"]
     assert "workflow" not in config.to_dict()
 

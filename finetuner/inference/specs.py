@@ -149,6 +149,7 @@ class InferenceOptimizationConfig:
     speculative_tokens: int = 0
     compile: bool = False
     toolchain_path: str = ""
+    serve_port: int = 1234
     extra_options: dict[str, Any] | None = None
 
     def validate(self) -> list[str]:
@@ -164,10 +165,13 @@ class InferenceOptimizationConfig:
             return [f"Unknown deployment target: {self.target}"]
         extras = self.extra_options or {}
         if target == DeviceTarget.AUTO:
-            errors.append("Select a concrete deployment target before optimizing inference")
+            # Resolved to a concrete specialist in run_optimize / Run best.
+            pass
         elif target not in spec.targets:
             errors.append(f"{spec.name} does not support target {target.value}")
-        errors.extend(_provider_recipe_errors(engine, target, extras))
+            errors.extend(_provider_recipe_errors(engine, target, extras))
+        else:
+            errors.extend(_provider_recipe_errors(engine, target, extras))
         try:
             source = SourceFormat(self.source_format)
         except ValueError:
@@ -200,6 +204,8 @@ class InferenceOptimizationConfig:
                 f"{spec.name} has no ahead-of-time compiled engine; "
                 "leave compile disabled and use the serve plan"
             )
+        if not 1 <= self.serve_port <= 65535:
+            errors.append("serve_port must be between 1 and 65,535")
         return errors
 
     def require_valid(self) -> None:
@@ -223,6 +229,7 @@ class InferenceOptimizationConfig:
             "speculative_tokens": self.speculative_tokens,
             "compile": self.compile,
             "toolchain_path": self.toolchain_path,
+            "serve_port": self.serve_port,
             "extra_options": self.extra_options or {},
         }
 

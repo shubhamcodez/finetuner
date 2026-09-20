@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -20,7 +20,12 @@ from PySide6.QtWidgets import (
 )
 
 from finetuner.core.job import ProjectConfig
-from finetuner.inference.devices import apply_device_recipe, launch_targets, recipe_for_target
+from finetuner.inference.devices import (
+    apply_best_runtime,
+    apply_device_recipe,
+    launch_targets,
+    recipe_for_target,
+)
 from finetuner.inference.planner import (
     backend_engine_compatibility_error,
     detect_inference_hardware,
@@ -35,6 +40,8 @@ class InferenceTab(QWidget):
     config_changed = Signal()
     run_requested = Signal()
     quantization_changed = Signal()
+    serve_requested = Signal(bool)
+    stop_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -46,13 +53,16 @@ class InferenceTab(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(6)
-        self.run_bar = ToolRunBar("Run inference optimization")
-        self.run_bar.run_requested.connect(self.run_requested.emit)
+        self.run_bar = ToolRunBar("Run best engine for this machine")
+        self.run_bar.run_requested.connect(self._run_best)
         layout.addWidget(self.run_bar)
         intro = QLabel(
-            "Plan, compile, and bind a concrete inference engine to one device. "
-            "Use Run on NPU, NVIDIA GPU, or AMD GPU for a matching recipe. "
-            "Quantization chooses the weight format; this stage chooses how it is served."
+            "Load a model and Finetuner detects this device, then asks whether to "
+            "optimize before serving at http://127.0.0.1:1234. "
+            "One adaptive engine picks the strongest specialist: "
+            "vLLM or llama.cpp CUDA on NVIDIA, llama.cpp on AMD/Apple/CPU, "
+            "OpenVINO on Intel NPU/GPU, and QNN/HTP only when the artifact is a "
+            "Hexagon context-binary graph. You can also serve without optimizing."
         )
         intro.setObjectName("HintLabel")
         intro.setWordWrap(True)
@@ -65,6 +75,7 @@ class InferenceTab(QWidget):
         for spec in engine_specs():
             self.engine.addItem(spec.name, spec.engine.value)
         self.target = QComboBox()
+        self.target.addItem("Best for this machine", DeviceTarget.AUTO.value)
         for target in DeviceTarget:
             if target != DeviceTarget.AUTO:
                 self.target.addItem(target.value.replace("_", " ").title(), target.value)
@@ -86,6 +97,9 @@ class InferenceTab(QWidget):
         self.cuda_graphs = QCheckBox("CUDA graphs")
         self.flash_attention = QCheckBox("Flash attention")
         self.compile = QCheckBox("Compile or cache an engine artifact")
+        self.serve_port = QSpinBox()
+        self.serve_port.setRange(1, 65535)
+        self.serve_port.setValue(1234)
         flags = QHBoxLayout()
         flags.addWidget(self.prefix_caching)
         flags.addWidget(self.cuda_graphs)
@@ -109,6 +123,7 @@ class InferenceTab(QWidget):
         form.addRow("Speculative tokens", self.speculative)
         form.addRow("Runtime flags", flags)
         form.addRow("Compile engine", self.compile)
+        form.addRow("Serve port", self.serve_port)
         form.addRow("Toolchain path", toolchain_row)
         layout.addLayout(form)
 
@@ -128,6 +143,21 @@ class InferenceTab(QWidget):
             devices.addWidget(button)
         devices.addStretch()
         layout.addLayout(devices)
+
+        serve_row = QHBoxLayout()
+        self.serve_plain_btn = QPushButton("Serve without optimizing")
+        self.serve_plain_btn.clicked.connect(lambda: self.serve_requested.emit(False))
+        self.stop_serve_btn = QPushButton("Stop server")
+        self.stop_serve_btn.clicked.connect(self.stop_requested.emit)
+        serve_row.addWidget(self.serve_plain_btn)
+        serve_row.addWidget(self.stop_serve_btn)
+        serve_row.addStretch()
+        layout.addLayout(serve_row)
+        self.serve_status = QLabel("Not serving. After a model is loaded it will be offered on port 1234.")
+        self.serve_status.setObjectName("HintLabel")
+        self.serve_status.setWordWrap(True)
+        self.serve_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.serve_status)
 
         row = QHBoxLayout()
         detect = QPushButton("Detect This Device")
@@ -166,6 +196,7 @@ class InferenceTab(QWidget):
         self.cuda_graphs.toggled.connect(self._sync)
         self.flash_attention.toggled.connect(self._sync)
         self.compile.toggled.connect(self._sync)
+        self.serve_port.valueChanged.connect(self._sync)
         self.toolchain.textChanged.connect(self._sync)
 
     def _load_config(self) -> None:
@@ -183,6 +214,7 @@ class InferenceTab(QWidget):
         self.cuda_graphs.setChecked(cfg.cuda_graphs)
         self.flash_attention.setChecked(cfg.flash_attention)
         self.compile.setChecked(cfg.compile)
+        self.serve_port.setValue(cfg.serve_port or 1234)
         self.toolchain.setText(cfg.toolchain_path)
         self._sync()
 
@@ -215,6 +247,7 @@ class InferenceTab(QWidget):
         cfg.cuda_graphs = self.cuda_graphs.isChecked()
         cfg.flash_attention = self.flash_attention.isChecked()
         cfg.compile = self.compile.isChecked()
+        cfg.serve_port = self.serve_port.value()
         cfg.toolchain_path = self.toolchain.text().strip()
         errors = cfg.validate()
         mismatch = backend_engine_compatibility_error(self.config.quantization.backend, cfg.engine)
@@ -227,7 +260,7 @@ class InferenceTab(QWidget):
             mode = "compiled engine" if spec.compiles_ahead_of_time and cfg.compile else "serve plan"
             self.status.setText(
                 f"Ready: {spec.name} -> {cfg.target.replace('_', ' ')} ({mode}, "
-                f"ctx {cfg.max_context}, batch {cfg.max_batch_size})"
+                f"ctx {cfg.max_context}, batch {cfg.max_batch_size}, port {cfg.serve_port})"
             )
         self.status.setToolTip(spec.description)
         self.config_changed.emit()
@@ -259,6 +292,17 @@ class InferenceTab(QWidget):
             button.style().unpolish(button)
             button.style().polish(button)
 
+    def _run_best(self) -> None:
+        choice = apply_best_runtime(self.config, run_on_device=True)
+        self._load_config()
+        self.quantization_changed.emit()
+        skipped = f" Skipped: {'; '.join(choice.skipped)}." if choice.skipped else ""
+        self.status.setText(
+            f"{choice.reason} ({choice.recipe.inference.engine} / "
+            f"{choice.recipe.quantization.backend}).{skipped}"
+        )
+        self.run_requested.emit()
+
     def _run_on_device(self, target: DeviceTarget) -> None:
         recipe = apply_device_recipe(self.config, target, run_on_device=True)
         self._load_config()
@@ -271,7 +315,14 @@ class InferenceTab(QWidget):
         self.run_requested.emit()
 
     def _recommend(self) -> None:
-        target = DeviceTarget(self.target.currentData() or DeviceTarget.CPU.value)
+        target = DeviceTarget(self.target.currentData() or DeviceTarget.AUTO.value)
+        if target == DeviceTarget.AUTO:
+            choice = apply_best_runtime(self.config, run_on_device=False)
+            self._load_config()
+            self.quantization_changed.emit()
+            skipped = f" Skipped: {'; '.join(choice.skipped)}." if choice.skipped else ""
+            self.status.setText(f"{choice.reason}.{skipped}")
+            return
         try:
             recommendation = recommend_for_target(target)
         except ValueError as exc:
@@ -308,3 +359,12 @@ class InferenceTab(QWidget):
             f"{artifact.get('target', '')} | {compiled} | {serve_text}{bind_text}"
         )
         self.plan_preview.setToolTip(plan_path.as_posix())
+
+    def set_serve_status(self, url: str = "", detail: str = "") -> None:
+        if url:
+            extra = f" — {detail}" if detail else ""
+            self.serve_status.setText(f"Serving at {url}{extra}")
+        else:
+            self.serve_status.setText(
+                detail or "Not serving. After a model is loaded it will be offered on port 1234."
+            )

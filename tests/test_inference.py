@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 
 from finetuner.core.job import ProjectConfig
-from finetuner.inference.devices import apply_device_recipe, preferred_npu_target, recipe_for_target
+from finetuner.inference.devices import (
+    apply_device_recipe,
+    detect_htp_ready,
+    preferred_npu_target,
+    recipe_for_target,
+    select_best_runtime,
+)
 from finetuner.inference.planner import (
     backend_engine_compatibility_error,
     compatible_engines,
@@ -61,6 +67,51 @@ def test_recommendations_choose_runtime_specific_engines():
     tight = recommended_config(DeviceTarget.NVIDIA_GPU, memory_gb=10, vllm_available=True)
     assert tight.kv_cache_dtype == "fp8"
     assert tight.max_context == 4096
+
+
+def test_adaptive_runtime_skips_hexagon_without_an_htp_package():
+    caps = [
+        HardwareCapability(DeviceTarget.CPU, True, "Oryon"),
+        HardwareCapability(DeviceTarget.QUALCOMM_NPU, True, "Hexagon NPU"),
+        HardwareCapability(DeviceTarget.NVIDIA_GPU, False, "missing"),
+    ]
+    choice = select_best_runtime(caps, htp_ready=False)
+    assert choice.recipe.target == DeviceTarget.CPU
+    assert choice.recipe.inference.engine == "llamacpp"
+    assert any("QNN/HTP" in item for item in choice.skipped)
+
+
+def test_adaptive_runtime_uses_qnn_when_the_package_is_htp_ready():
+    caps = [
+        HardwareCapability(DeviceTarget.CPU, True, "Oryon"),
+        HardwareCapability(DeviceTarget.QUALCOMM_NPU, True, "Hexagon NPU"),
+    ]
+    choice = select_best_runtime(caps, htp_ready=True)
+    assert choice.recipe.target == DeviceTarget.QUALCOMM_NPU
+    assert choice.recipe.inference.engine == "onnxruntime"
+
+
+def test_adaptive_runtime_prefers_nvidia_when_present():
+    caps = [
+        HardwareCapability(DeviceTarget.CPU, True, "cpu"),
+        HardwareCapability(DeviceTarget.NVIDIA_GPU, True, "RTX"),
+        HardwareCapability(DeviceTarget.QUALCOMM_NPU, True, "Hexagon"),
+    ]
+    choice = select_best_runtime(caps, htp_ready=True, vllm_available=True)
+    assert choice.recipe.target == DeviceTarget.NVIDIA_GPU
+    assert choice.recipe.inference.engine == "vllm"
+
+
+def test_detect_htp_ready_requires_a_qnn_context_binary(tmp_path):
+    assert detect_htp_ready(str(tmp_path)) is False
+    (tmp_path / "genai_config.json").write_text('{"model":{}}', encoding="utf-8")
+    assert detect_htp_ready(str(tmp_path)) is False
+    (tmp_path / "decoder.bin").write_bytes(b"qnn")
+    (tmp_path / "genai_config.json").write_text(
+        '{"model":{"decoder":{"session_options":{"provider_options":[{"qnn":{}}]}}}}',
+        encoding="utf-8",
+    )
+    assert detect_htp_ready(str(tmp_path)) is True
 
 
 def test_device_recipe_applies_npu_and_gpu_targets():
