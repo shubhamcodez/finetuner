@@ -33,7 +33,7 @@ class MetricCard(QFrame):
         self.value_label.setObjectName("MetricValue")
         self.detail_label = QLabel("")
         self.detail_label.setObjectName("MetricDetail")
-        self.detail_label.setWordWrap(True)
+        self.detail_label.setWordWrap(False)
         layout.addWidget(heading)
         layout.addWidget(self.value_label)
         layout.addWidget(self.detail_label)
@@ -134,7 +134,7 @@ class MonitorTab(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
         health = QFrame()
         health.setObjectName("SurfaceCard")
@@ -181,7 +181,10 @@ class MonitorTab(QWidget):
         cards.addWidget(self.tpu_mem_card, 1, 3)
         layout.addLayout(cards)
 
-        charts = QGridLayout()
+        chart_wrap = QWidget()
+        chart_wrap.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        charts = QGridLayout(chart_wrap)
+        charts.setContentsMargins(0, 0, 0, 0)
         charts.setSpacing(8)
         charts.setRowStretch(0, 1)
         charts.setRowStretch(1, 1)
@@ -195,23 +198,7 @@ class MonitorTab(QWidget):
         charts.addWidget(self.gpu_chart, 0, 1)
         charts.addWidget(self.npu_chart, 1, 0)
         charts.addWidget(self.tpu_chart, 1, 1)
-        layout.addLayout(charts, 1)
-
-        status = QHBoxLayout()
-        status.setSpacing(16)
-        self.gpu_status = QLabel("")
-        self.gpu_status.setObjectName("MutedLabel")
-        self.gpu_status.setWordWrap(True)
-        self.npu_status = QLabel("")
-        self.npu_status.setObjectName("MutedLabel")
-        self.npu_status.setWordWrap(True)
-        self.tpu_status = QLabel("")
-        self.tpu_status.setObjectName("MutedLabel")
-        self.tpu_status.setWordWrap(True)
-        status.addWidget(self.gpu_status, 1)
-        status.addWidget(self.npu_status, 1)
-        status.addWidget(self.tpu_status, 1)
-        layout.addLayout(status)
+        layout.addWidget(chart_wrap, 1)
 
     def _on_stats(self, stats: SystemStats) -> None:
         self.cpu_card.set_value(f"{stats.cpu_percent:.1f}%")
@@ -233,11 +220,11 @@ class MonitorTab(QWidget):
                 f"{stats.gpu_mem_used_gb:.1f} GB",
                 f"{stats.gpu_mem_total_gb:.1f} GB · {stats.gpu_temp_c:.0f}°C",
             )
-            self.gpu_status.setText(f"NVIDIA GPU active — {stats.gpu_name}")
+            self.gpu_card.setToolTip(f"NVIDIA GPU active — {stats.gpu_name}")
         else:
             self.gpu_card.set_value("Unavailable", "No NVIDIA GPU detected")
             self.vram_card.set_value("—", "")
-            self.gpu_status.setText(
+            self.gpu_card.setToolTip(
                 "GPU unavailable. Install NVIDIA drivers to enable CUDA fine-tuning."
             )
 
@@ -256,11 +243,11 @@ class MonitorTab(QWidget):
                 self.npu_mem_card.set_value(f"{stats.npu_mem_used_gb:.1f} GB", mem_detail)
             else:
                 self.npu_mem_card.set_value("—", mem_detail)
-            self.npu_status.setText(f"NPU active — {stats.npu_name or 'Windows NPU'}")
+            self.npu_card.setToolTip(f"NPU active — {stats.npu_name or 'Windows NPU'}")
         else:
             self.npu_card.set_value("Unavailable", "No NPU detected")
             self.npu_mem_card.set_value("—", "")
-            self.npu_status.setText(
+            self.npu_card.setToolTip(
                 "NPU unavailable. Qualcomm Hexagon and Intel NPUs appear here when Windows exposes them."
             )
 
@@ -279,11 +266,11 @@ class MonitorTab(QWidget):
                 self.tpu_mem_card.set_value(f"{stats.tpu_mem_used_gb:.1f} GB", stats.tpu_detail)
             else:
                 self.tpu_mem_card.set_value("—", stats.tpu_detail or "No HBM counters")
-            self.tpu_status.setText(f"TPU active — {stats.tpu_name or 'TPU'}")
+            self.tpu_card.setToolTip(f"TPU active — {stats.tpu_name or 'TPU'}")
         else:
             self.tpu_card.set_value("Unavailable", "No TPU detected")
             self.tpu_mem_card.set_value("—", "")
-            self.tpu_status.setText(
+            self.tpu_card.setToolTip(
                 "TPU unavailable. Coral Edge TPU or a Cloud TPU runtime appears here when present."
             )
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -25,8 +25,20 @@ from PySide6.QtWidgets import (
 )
 
 from finetuner.core.download_worker import DownloadWorker
+from finetuner.core.hf_trending import FEATURED_MODELS, HubModel, fetch_trending_models
 from finetuner.core.job import ModelJob, ModelSource, ProjectConfig
 from finetuner.core.paths import DEFAULT_MODEL_ID
+
+
+class _TrendingWorker(QThread):
+    ready = Signal(object)
+
+    def __init__(self, token: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self._token = token
+
+    def run(self) -> None:
+        self.ready.emit(fetch_trending_models(token=self._token))
 
 
 def validate_local_model(path: Path) -> tuple[bool, str]:
