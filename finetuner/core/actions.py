@@ -27,7 +27,7 @@ class ActionSpec:
 _ACTIONS: dict[ActionKind, ActionSpec] = {
     ActionKind.TRAIN: ActionSpec(
         ActionKind.TRAIN,
-        "Train",
+        "Finetune",
         "training",
         True,
         True,

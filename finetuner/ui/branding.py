@@ -52,14 +52,19 @@ def app_icon() -> QIcon:
     return icon
 
 
-def logo_pixmap(height: int = 24) -> QPixmap | None:
+def logo_pixmap(height: int | None = 24, width: int | None = None) -> QPixmap | None:
     path = logo_path()
     if not path.exists():
         return None
     pixmap = QPixmap(str(path))
     if pixmap.isNull():
         return None
+    if width:
+        return pixmap.scaledToWidth(
+            width,
+            Qt.TransformationMode.SmoothTransformation,
+        )
     return pixmap.scaledToHeight(
-        height,
+        height or 24,
         Qt.TransformationMode.SmoothTransformation,
     )

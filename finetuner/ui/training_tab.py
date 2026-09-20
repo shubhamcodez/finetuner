@@ -52,7 +52,7 @@ class TrainingTab(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(6)
 
-        self.run_bar = ToolRunBar("Run training")
+        self.run_bar = ToolRunBar("Run finetune")
         self.run_bar.run_requested.connect(self.run_requested.emit)
         layout.addWidget(self.run_bar)
 
@@ -204,7 +204,7 @@ class TrainingTab(QWidget):
         layout.addWidget(self.advanced_button)
         layout.addWidget(dataset_group)
 
-        params_group = QGroupBox("Training Hyperparameters")
+        params_group = QGroupBox("Finetune hyperparameters")
         self.params_group = params_group
         params_grid = QGridLayout(params_group)
         params_grid.setVerticalSpacing(4)
@@ -342,7 +342,7 @@ class TrainingTab(QWidget):
         spec = TRAINING_METHODS.get(method_id)
         description = spec.description if spec else ""
         self.method_hint.setText(
-            f"{spec.name if spec else method_id.upper()} uses these settings when you run training."
+            f"{spec.name if spec else method_id.upper()} uses these settings when you run finetune."
         )
         self.method_hint.setToolTip(description)
 

@@ -30,7 +30,7 @@ class CommandPalette(QDialog):
         self._commands = [
             *( (area, f"Open {label}") for area, label, _icon in PRIMARY_NAV ),
             *( (area, f"Open {label}") for area, label, _icon in BOTTOM_NAV ),
-            ("training", "Start training"),
+            ("training", "Start finetune"),
             ("evals", "Run evaluation"),
             ("inference", "Serve model on port 1234"),
         ]

@@ -60,7 +60,7 @@ The window has a header status badge, product tabs, and a **Run Console** at the
 |---|---|
 | **Project** | Readiness overview. Open or run any ready tool from its card. |
 | **Models** | Queue Hugging Face or local models. Most tools run on this queue. |
-| **Data & Train** | Dataset, training method, rewards, and LoRA settings. |
+| **Finetune** | Dataset, method, rewards, and LoRA settings. |
 | **Distillation** | Teacher → student transfer. Uses its own teacher/student fields, not the queue. |
 | **Evaluation** | Benchmarks (MMLU, GSM8K, HellaSwag, ARC Challenge). |
 | **Analysis** | Hidden-state projections, activation norms, attention entropy, CKA. |
@@ -100,7 +100,7 @@ This is the shortest path that exercises the product without a large download.
 3. Choose **Optimize and serve** or **Serve without optimizing**. The model is bound at `http://127.0.0.1:1234`.
 4. On **Data & Train**, pick **Bundled sample (smoke test)** or another preset and check **Use offline sample only**.
 5. Leave the method on **SFT**.
-6. Click **Run training**.
+6. Click **Run finetune**.
 7. Open **Results** when the console says the run finished. Policy output is under `runs\`.
 
 For a real experiment, download a model, pick a full preset (not the bundled sample), and raise **Max steps** under advanced settings.

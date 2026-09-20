@@ -27,7 +27,7 @@ class DocsPage(QWidget):
             ),
             (
                 "Run one tool at a time",
-                "Training, distillation, evaluation, analysis, deployment, and inference are independent. "
+                "Finetune, distillation, evaluation, analysis, deployment, and inference are independent. "
                 "They share the model queue. They do not wait on a DAG.",
             ),
             (

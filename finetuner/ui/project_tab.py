@@ -21,7 +21,7 @@ from finetuner.ui.theme import Token
 
 _TOOLS = (
     ("models", "Models", "models", "Queue Hugging Face and local checkpoints."),
-    ("training", "Train", "training", "Fine-tune a queued model on selected data."),
+    ("training", "Finetune", "training", "Fine-tune a queued model on selected data."),
     ("distillation", "Distill", "distillation", "Transfer a teacher into a smaller student."),
     ("evals", "Evaluate", "evaluation", "Score models on shared benchmarks."),
     ("analysis", "Analyze", "analysis", "Inspect representations and layer similarity."),
@@ -114,7 +114,7 @@ class ProjectTab(QWidget):
         outputs_title = QLabel("Recent runs")
         outputs_title.setObjectName("SectionTitle")
         layout.addWidget(outputs_title)
-        self.empty = QLabel("No runs yet. Train a model to see runs and metrics here.")
+        self.empty = QLabel("No runs yet. Finetune a model to see runs and metrics here.")
         self.empty.setObjectName("HintLabel")
         layout.addWidget(self.empty)
         self.outputs = QTableWidget(0, 6)

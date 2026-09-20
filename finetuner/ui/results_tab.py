@@ -43,7 +43,7 @@ class ResultsTab(QWidget):
         self.summary_frame.setObjectName("SummaryBanner")
         summary_layout = QVBoxLayout(self.summary_frame)
         summary_layout.setContentsMargins(0, 0, 0, 0)
-        self.summary_label = QLabel("No training runs yet. Train a model to see runs and metrics here.")
+            self.summary_label = QLabel("No finetune runs yet. Finetune a model to see runs and metrics here.")
         self.summary_label.setWordWrap(True)
         summary_layout.addWidget(self.summary_label)
         layout.addWidget(self.summary_frame)
@@ -72,7 +72,7 @@ class ResultsTab(QWidget):
 
     def _refresh(self) -> None:
         if not self._results:
-            self.summary_label.setText("No training runs yet. Train a model to see runs and metrics here.")
+            self.summary_label.setText("No finetune runs yet. Finetune a model to see runs and metrics here.")
             self.summary_frame.setVisible(True)
             self.table.setRowCount(0)
             self.table.setColumnCount(0)

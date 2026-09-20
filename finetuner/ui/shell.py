@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from finetuner.ui.branding import PRODUCT_NAME, logo_pixmap
+from finetuner.ui.branding import logo_pixmap
 from finetuner.ui.icons import line_icon
 from finetuner.ui.theme import Token
 
@@ -19,7 +19,7 @@ PRIMARY_NAV = (
     ("project", "Project", "project"),
     ("models", "Models", "models"),
     ("data", "Data", "data"),
-    ("training", "Training", "training"),
+    ("training", "Finetune", "training"),
     ("distillation", "Distillation", "distillation"),
     ("evals", "Evaluation", "evaluation"),
     ("analysis", "Analysis", "analysis"),
@@ -38,7 +38,7 @@ PAGE_COPY = {
     "project": ("PROJECT", "Build, evaluate, and deploy your model", "A seamless workflow for modern model development."),
     "models": ("MODELS", "Model registry", "Queue local or Hugging Face checkpoints for every tool."),
     "data": ("DATA", "Datasets", "Choose a preset, local JSONL, or Hugging Face dataset."),
-    "training": ("TRAINING", "Train model", "Fine-tune a queued model with the selected method and data."),
+    "training": ("FINETUNE", "Finetune model", "Fine-tune a queued model with the selected method and data."),
     "distillation": ("DISTILLATION", "Distill a teacher into a student", "Transfer behavior from a larger model into a smaller one."),
     "evals": ("EVALUATION", "Evaluate models", "Score queued models on shared benchmarks."),
     "analysis": ("ANALYSIS", "Analyze representations", "Inspect hidden states, activations, and layer similarity."),
@@ -82,18 +82,12 @@ class Sidebar(QFrame):
         layout.setContentsMargins(12, 20, 12, 16)
         layout.setSpacing(4)
 
-        brand = QHBoxLayout()
-        brand.setSpacing(10)
         logo = QLabel()
-        pixmap = logo_pixmap(28)
+        pixmap = logo_pixmap(width=112)
         if pixmap is not None:
             logo.setPixmap(pixmap)
-        title = QLabel(PRODUCT_NAME)
-        title.setObjectName("SidebarBrand")
-        brand.addWidget(logo)
-        brand.addWidget(title, 1)
-        layout.addLayout(brand)
-        layout.addSpacing(20)
+        layout.addWidget(logo)
+        layout.addSpacing(24)
 
         for area, label, icon in PRIMARY_NAV:
             button = NavButton(area, label, icon)

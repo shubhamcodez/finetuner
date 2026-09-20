@@ -327,7 +327,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "Choose a tool",
-                "Open Training, Distillation, Evaluation, Analysis, Deployment, or Inference, then start that tool.",
+                "Open Finetune, Distillation, Evaluation, Analysis, Deployment, or Inference, then start that tool.",
             )
             return
         issues = collect_action_issues(self.config, selected)
