@@ -65,9 +65,10 @@ _BACKENDS: dict[QuantizationBackend, BackendSpec] = {
         "ONNX Runtime",
         "onnx",
         (8,),
-        (DeviceTarget.CPU,),
+        (DeviceTarget.CPU, DeviceTarget.QUALCOMM_NPU),
         "pip install optimum[onnxruntime]",
-        "Portable INT8 graph for CPU inference. GPU/NPU execution needs a provider-specific recipe.",
+        "INT8 ONNX graph for CPU, or a QNN/HTP recipe for Qualcomm Hexagon NPUs. "
+        "Generic ONNX is not enough for NVIDIA/AMD GPUs.",
     ),
     QuantizationBackend.AWQ: BackendSpec(
         QuantizationBackend.AWQ,

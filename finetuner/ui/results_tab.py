@@ -85,7 +85,7 @@ class ResultsTab(QWidget):
                     task_ids.append(e.task_id)
 
         headers = ["Model"] + [EVAL_TASKS[t].name if t in EVAL_TASKS else t for t in task_ids]
-        headers += ["Policy", "Analysis", "Deployment"]
+        headers += ["Policy", "Analysis", "Deployment", "Inference"]
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
         self.table.setRowCount(len(self._results))
@@ -139,6 +139,7 @@ class ResultsTab(QWidget):
                 ("models", result.output_path),
                 ("analysis", result.analysis_path),
                 ("deployment", result.deployment_path),
+                ("inference", result.inference_path),
             )
             for offset, (area, path) in enumerate(artifacts):
                 item = QTableWidgetItem("Ready" if path else "-")

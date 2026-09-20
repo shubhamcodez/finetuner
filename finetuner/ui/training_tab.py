@@ -24,12 +24,13 @@ from finetuner.datasets.presets import DATASET_PRESETS, get_preset
 from finetuner.eval.tasks import EVAL_TASKS
 from finetuner.training.methods import TRAINING_METHODS
 from finetuner.training.rewards import REWARD_FUNCTIONS
-from finetuner.ui.pipeline_context import PipelineContextBar
+from finetuner.ui.tool_run import ToolRunBar
 
 
 class TrainingTab(QWidget):
     config_changed = Signal()
     evals_suggest = Signal(list)
+    run_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -51,8 +52,9 @@ class TrainingTab(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(6)
 
-        self.pipeline_context = PipelineContextBar()
-        layout.addWidget(self.pipeline_context)
+        self.run_bar = ToolRunBar("Run training")
+        self.run_bar.run_requested.connect(self.run_requested.emit)
+        layout.addWidget(self.run_bar)
 
         preset_group = QGroupBox("Ready-made Datasets")
         preset_layout = QVBoxLayout(preset_group)
@@ -340,7 +342,7 @@ class TrainingTab(QWidget):
         spec = TRAINING_METHODS.get(method_id)
         description = spec.description if spec else ""
         self.method_hint.setText(
-            f"{spec.name if spec else method_id.upper()} default; workflow stage settings override it."
+            f"{spec.name if spec else method_id.upper()} uses these settings when you run training."
         )
         self.method_hint.setToolTip(description)
 

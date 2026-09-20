@@ -10,7 +10,7 @@ method families and composable stages rather than advertising a guessed “OpenA
 |---|---|---|
 | OpenAI | InstructGPT describes demonstration SFT, a preference reward model, and PPO. Deliberative alignment describes synthetic specification-aware reasoning data followed by reward-model RL. | Classic RLHF template; custom synthetic-data/distillation stages; verifier/reward hooks. |
 | Anthropic | Constitutional AI describes self-critique/revision SFT and reinforcement learning from AI feedback (RLAIF). | Sequence distillation supports critique/revision data; reward stages accept model-based preferences. |
-| Google DeepMind | Gemini 1 describes curated prompts, SFT, reward modeling, and RLHF. GKD trains on a mixture that can include student-generated sequences to reduce train/deployment distribution mismatch. | Staged workflows and experimental on-policy GKD with an explicit student-generated fraction. |
+| Google DeepMind | Gemini 1 describes curated prompts, SFT, reward modeling, and RLHF. GKD trains on a mixture that can include student-generated sequences to reduce train/deployment distribution mismatch. | Independent train/distill tools and experimental on-policy GKD with an explicit student-generated fraction. |
 | xAI | Public Grok material describes large-scale RL, human feedback, verifiable rewards, model grading, synthetic data, and long-running agentic rollouts. Exact objectives are not disclosed. | Online GRPO/RLOO-style building blocks, external verifier hooks, and long-stage manifests—without claiming method identity. |
 
 Primary sources:
@@ -69,16 +69,32 @@ Quantization is a target-specific accuracy/latency/size tradeoff, not a universa
 - OpenVINO/NNCF supports INT8 and INT4 weight compression for compatible Intel CPU/GPU devices and
   supported Intel NPUs.
 - ONNX Runtime exposes many execution providers, but a generic ONNX INT8 graph is not automatically a
-  valid NPU artifact. Finetuner currently limits generic ONNX quantization to CPU and refuses to claim a
-  Qualcomm NPU path without a QNN/QAIRT-specific recipe.
+  valid NPU artifact. Qualcomm Hexagon NPU uses an explicit QNN/HTP recipe (QNNExecutionProvider,
+  QnnHtp.dll, burst HTP mode). Generic CPU ONNX Runtime and vLLM stay rejected for that target.
 - AWQ uses calibration activations and currently targets compatible NVIDIA serving stacks.
+
+Quantization is not the same as serving. An inference engine still has to choose paging, KV-cache
+layout, batching, and compilation:
+
+- llama.cpp serves GGUF with explicit context, batch, GPU-layer, flash-attention, and KV-cache-type
+  flags. It does not consume OpenVINO IR or ONNX graphs.
+- vLLM pages KV cache and applies continuous batching on NVIDIA GPUs. It consumes Hugging Face or AWQ
+  weights, not GGUF.
+- TensorRT-LLM builds an ahead-of-time CUDA engine for a fixed max batch and sequence length.
+- OpenVINO compiles or caches a device-specific blob for Intel CPU/GPU/NPU from OpenVINO IR.
+- ONNX Runtime graph optimization is provider-specific: CPU EP, CUDA EP, DirectML/ROCm, or QNN/HTP.
+- Hugging Face TGI is a serving stack, not a portable compiled artifact.
 
 Primary sources:
 
 - [llama.cpp README](https://github.com/ggml-org/llama.cpp/blob/master/README.md)
+- [llama.cpp server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)
 - OpenVINO, [LLM weight compression](https://docs.openvino.ai/nightly/openvino-workflow/model-optimization-guide/weight-compression.html)
 - ONNX Runtime, [Execution Providers](https://onnxruntime.ai/docs/execution-providers/)
 - Hugging Face Optimum ONNX, [Quantization](https://huggingface.co/docs/optimum-onnx/en/onnxruntime/usage_guides/quantization)
+- [vLLM documentation](https://docs.vllm.ai/)
+- [TensorRT-LLM](https://nvidia.github.io/TensorRT-LLM/)
+- Hugging Face, [Text Generation Inference](https://huggingface.co/docs/text-generation-inference)
 
 ## Representation and activation analysis
 

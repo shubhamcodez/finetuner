@@ -82,7 +82,7 @@ class ArtifactRecord:
 @dataclass
 class RunManifest:
     run_id: str
-    workflow: dict[str, Any]
+    action: dict[str, Any]
     config_digest: str
     started_at: str = field(default_factory=_utc_now)
     finished_at: str | None = None
@@ -109,7 +109,7 @@ class RunManifest:
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "config_digest": self.config_digest,
-            "workflow": self.workflow,
+            "action": self.action,
             "environment": self.environment,
             "stages": self.stages,
             "artifacts": [artifact.to_dict() for artifact in self.artifacts],

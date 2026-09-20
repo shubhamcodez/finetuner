@@ -134,7 +134,7 @@ class ModelsTab(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
 
-        hint = QLabel("Each queued model runs through the active workflow with shared settings.")
+        hint = QLabel("Queued models are the input for training, evaluation, analysis, deployment, and inference.")
         hint.setObjectName("HintLabel")
         hint.setWordWrap(True)
         layout.addWidget(hint)

@@ -16,17 +16,19 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from finetuner.core.actions import ActionEvent
 from finetuner.core.job import ModelRunResult, ProjectConfig
 from finetuner.core.project_state import ProjectAreaState, build_project_snapshot
-from finetuner.workflows.executor import StageEvent
 
 
 class ProjectAreaCard(QGroupBox):
     navigate_requested = Signal(str)
+    run_requested = Signal(str)
 
     def __init__(self, area_id: str, parent=None) -> None:
         super().__init__(parent)
         self.area_id = area_id
+        self._action = ""
         layout = QGridLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setHorizontalSpacing(8)
@@ -38,36 +40,41 @@ class ProjectAreaCard(QGroupBox):
         self.state.setObjectName("MutedLabel")
         self.state.setWordWrap(True)
         layout.addWidget(self.state, 1, 0)
-        self.configure = QPushButton("Configure")
+        buttons = QVBoxLayout()
+        self.configure = QPushButton("Open")
         self.configure.setObjectName("SecondaryButton")
         self.configure.clicked.connect(lambda: self.navigate_requested.emit(self.area_id))
-        layout.addWidget(self.configure, 0, 1, 2, 1)
+        self.run = QPushButton("Run")
+        self.run.setObjectName("PrimaryButton")
+        self.run.clicked.connect(lambda: self.run_requested.emit(self._action))
+        buttons.addWidget(self.configure)
+        buttons.addWidget(self.run)
+        layout.addLayout(buttons, 0, 1, 2, 1)
 
-    def apply(self, area: ProjectAreaState) -> None:
+    def apply(self, area: ProjectAreaState, running: bool) -> None:
         self.setTitle(area.title)
         self.summary.setText(area.summary)
-        if not area.included:
-            self.state.setText("Available | not in active workflow")
+        self._action = area.action
+        self.run.setVisible(bool(area.action))
+        self.run.setEnabled(bool(area.action) and area.ready and not running)
+        if area.ready:
+            self.state.setText("Ready to run" if area.action else "Ready")
             self.configure.setText("Open")
-        elif area.ready:
-            self.state.setText("Ready | in active workflow")
-            self.configure.setText("Review")
         else:
             self.state.setText("Needs attention | " + "; ".join(area.issues))
             self.configure.setText("Fix")
 
 
 class ProjectTab(QWidget):
-    """Connective project surface; specialized tools remain independently usable."""
+    """Overview of independent tools that share queued models and optional data."""
 
     navigate_requested = Signal(str)
-    run_requested = Signal()
+    run_requested = Signal(str)
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
         self.config = config
         self._running = False
-        self._stage_rows: dict[str, int] = {}
         self._results: list[ModelRunResult] = []
         self._cards: dict[str, ProjectAreaCard] = {}
         self._build_ui()
@@ -88,64 +95,46 @@ class ProjectTab(QWidget):
         hero.setObjectName("SummaryBanner")
         hero_layout = QHBoxLayout(hero)
         hero_text = QVBoxLayout()
-        self.workflow_name = QLabel()
-        self.workflow_name.setObjectName("LogPanelTitle")
-        hero_text.addWidget(self.workflow_name)
+        self.title = QLabel()
+        self.title.setObjectName("LogPanelTitle")
+        hero_text.addWidget(self.title)
         self.readiness = QLabel()
         self.readiness.setWordWrap(True)
         hero_text.addWidget(self.readiness)
         hero_layout.addLayout(hero_text, 1)
-        workflow_button = QPushButton("Edit Workflow")
-        workflow_button.clicked.connect(lambda: self.navigate_requested.emit("workflow"))
-        self.run_button = QPushButton("Run Active Workflow")
-        self.run_button.setObjectName("PrimaryButton")
-        self.run_button.clicked.connect(self.run_requested.emit)
-        hero_layout.addWidget(workflow_button)
-        hero_layout.addWidget(self.run_button)
         layout.addWidget(hero)
 
-        section = QLabel("Project context")
+        section = QLabel("Tools")
         section.setObjectName("LogPanelTitle")
         layout.addWidget(section)
         grid = QGridLayout()
         for index, area_id in enumerate(
-            ("models", "training", "distillation", "evals", "analysis", "deployment")
+            (
+                "models",
+                "training",
+                "distillation",
+                "evals",
+                "analysis",
+                "deployment",
+                "inference",
+            )
         ):
             card = ProjectAreaCard(area_id)
             card.navigate_requested.connect(self.navigate_requested.emit)
+            card.run_requested.connect(self.run_requested.emit)
             self._cards[area_id] = card
             grid.addWidget(card, index // 3, index % 3)
         layout.addLayout(grid)
 
-        pipeline_header = QHBoxLayout()
-        pipeline_title = QLabel("Active workflow")
-        pipeline_title.setObjectName("LogPanelTitle")
-        pipeline_header.addWidget(pipeline_title)
-        pipeline_header.addStretch()
+        status_header = QHBoxLayout()
+        status_title = QLabel("Current run")
+        status_title.setObjectName("LogPanelTitle")
+        status_header.addWidget(status_title)
+        status_header.addStretch()
         self.current_stage = QLabel("Not running")
         self.current_stage.setObjectName("MutedLabel")
-        pipeline_header.addWidget(self.current_stage)
-        layout.addLayout(pipeline_header)
-
-        self.stage_table = QTableWidget(0, 5)
-        self.stage_table.setHorizontalHeaderLabels(
-            ["#", "Stage", "Configuration", "Depends on", "Status"]
-        )
-        self.stage_table.verticalHeader().setVisible(False)
-        self.stage_table.setShowGrid(False)
-        self.stage_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.stage_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self.stage_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.stage_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.stage_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.stage_table.horizontalHeader().setSectionResizeMode(
-            4, QHeaderView.ResizeMode.ResizeToContents
-        )
-        self.stage_table.setMinimumHeight(150)
-        self.stage_table.setMaximumHeight(210)
-        layout.addWidget(self.stage_table)
+        status_header.addWidget(self.current_stage)
+        layout.addLayout(status_header)
 
         outputs_header = QHBoxLayout()
         outputs_title = QLabel("Latest outputs")
@@ -156,9 +145,9 @@ class ProjectTab(QWidget):
         results_button.clicked.connect(lambda: self.navigate_requested.emit("results"))
         outputs_header.addWidget(results_button)
         layout.addLayout(outputs_header)
-        self.outputs = QTableWidget(0, 5)
+        self.outputs = QTableWidget(0, 6)
         self.outputs.setHorizontalHeaderLabels(
-            ["Model", "Outcome", "Policy", "Analysis", "Deployment"]
+            ["Model", "Outcome", "Policy", "Analysis", "Deployment", "Inference"]
         )
         self.outputs.verticalHeader().setVisible(False)
         self.outputs.setShowGrid(False)
@@ -173,62 +162,36 @@ class ProjectTab(QWidget):
 
     def refresh(self) -> None:
         snapshot = build_project_snapshot(self.config)
-        self.workflow_name.setText(snapshot.workflow_name)
-        if snapshot.ready:
+        self.title.setText(snapshot.title)
+        ready_tools = [area for area in snapshot.areas if area.action and area.ready]
+        if ready_tools:
+            names = ", ".join(area.title for area in ready_tools)
             self.readiness.setText(
-                "Ready to run. Each tool shares this project context and contributes only when "
-                "its stage is present in the active workflow."
+                f"{len(ready_tools)} tool{'s' if len(ready_tools) != 1 else ''} ready: {names}. "
+                "Run any of them from its card or its page."
             )
         else:
             unique = list(dict.fromkeys(issue.message for issue in snapshot.issues))
-            self.readiness.setText("Before running: " + " | ".join(unique))
-        self.run_button.setEnabled(snapshot.ready and not self._running)
+            self.readiness.setText("Configure a tool before running: " + " | ".join(unique))
         for area in snapshot.areas:
-            self._cards[area.area_id].apply(area)
-        self._stage_rows.clear()
-        self.stage_table.setRowCount(len(snapshot.stages))
-        for row, stage in enumerate(snapshot.stages):
-            self._stage_rows[stage.stage_id] = row
-            values = (
-                str(row + 1),
-                stage.name,
-                stage.summary,
-                ", ".join(stage.depends_on) or "-",
-                "Pending",
-            )
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                if column in (0, 4):
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.stage_table.setItem(row, column, item)
+            self._cards[area.area_id].apply(area, self._running)
         self._refresh_outputs()
 
     def set_running(self, running: bool) -> None:
         self._running = running
         if running:
-            for row in range(self.stage_table.rowCount()):
-                self.stage_table.item(row, 4).setText("Pending")
             self.current_stage.setText("Preparing run...")
-            self.run_button.setEnabled(False)
         else:
             self.current_stage.setText("Run complete" if self._results else "Not running")
-            self.run_button.setEnabled(build_project_snapshot(self.config).ready)
+        self.refresh()
 
-    def handle_stage_event(self, event: StageEvent) -> None:
-        row = self._stage_rows.get(event.stage_id)
-        if row is None:
-            return
+    def handle_action_event(self, event: ActionEvent) -> None:
         labels = {"running": "Running", "completed": "Complete", "failed": "Failed"}
-        self.stage_table.item(row, 4).setText(labels.get(event.status, event.status.title()))
         subject = f"{event.subject} | " if event.subject else ""
         self.current_stage.setText(
-            f"{subject}{event.stage_name} ({event.index}/{event.total}) | {event.status}"
+            f"{subject}{event.action_name} ({event.index}/{event.total}) | "
+            f"{labels.get(event.status, event.status.title())}"
         )
-        if event.status == "completed" and event.metrics:
-            metrics = ", ".join(f"{key} {value:.2f}" for key, value in event.metrics.items())
-            self.stage_table.item(row, 2).setToolTip(metrics)
-        if event.status == "failed" and event.message:
-            self.stage_table.item(row, 4).setToolTip(event.message)
 
     def clear_results(self) -> None:
         self._results.clear()
@@ -248,13 +211,19 @@ class ProjectTab(QWidget):
                 "Ready" if result.output_path else "-",
                 "Ready" if result.analysis_path else "-",
                 "Ready" if result.deployment_path else "-",
+                "Ready" if result.inference_path else "-",
             )
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
                 if result.training_error:
                     item.setToolTip(result.training_error)
                 elif column > 1:
-                    paths = (result.output_path, result.analysis_path, result.deployment_path)
+                    paths = (
+                        result.output_path,
+                        result.analysis_path,
+                        result.deployment_path,
+                        result.inference_path,
+                    )
                     if paths[column - 2]:
                         item.setToolTip(paths[column - 2])
                 self.outputs.setItem(row, column, item)

@@ -14,11 +14,12 @@ from PySide6.QtWidgets import (
 
 from finetuner.core.job import ProjectConfig
 from finetuner.eval.tasks import EVAL_TASKS
-from finetuner.ui.pipeline_context import PipelineContextBar
+from finetuner.ui.tool_run import ToolRunBar
 
 
 class EvalsTab(QWidget):
     config_changed = Signal()
+    run_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -39,8 +40,9 @@ class EvalsTab(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
 
-        self.pipeline_context = PipelineContextBar()
-        layout.addWidget(self.pipeline_context)
+        self.run_bar = ToolRunBar("Run evaluation")
+        self.run_bar.run_requested.connect(self.run_requested.emit)
+        layout.addWidget(self.run_bar)
 
         settings_group = QGroupBox("Evaluation Settings")
         samples_row = QFormLayout(settings_group)

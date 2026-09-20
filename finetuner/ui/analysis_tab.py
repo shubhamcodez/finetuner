@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from finetuner.core.job import ProjectConfig
-from finetuner.ui.pipeline_context import PipelineContextBar
+from finetuner.ui.tool_run import ToolRunBar
 from finetuner.ui.theme import Theme
 
 
@@ -72,6 +72,7 @@ class RepresentationView(QGraphicsView):
 
 class AnalysisTab(QWidget):
     config_changed = Signal()
+    run_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -84,8 +85,9 @@ class AnalysisTab(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(6)
-        self.pipeline_context = PipelineContextBar()
-        layout.addWidget(self.pipeline_context)
+        self.run_bar = ToolRunBar("Run analysis")
+        self.run_bar.run_requested.connect(self.run_requested.emit)
+        layout.addWidget(self.run_bar)
 
         settings = QHBoxLayout()
         form = QFormLayout()
@@ -115,7 +117,7 @@ class AnalysisTab(QWidget):
         layer_row.addWidget(self.layer)
         layer_row.addStretch()
         self.summary = QLabel(
-            "Run a workflow containing an Analyze stage, or load representations.json."
+            "Run analysis on queued models, or load representations.json."
         )
         self.summary.setObjectName("MutedLabel")
         layer_row.addWidget(self.summary)

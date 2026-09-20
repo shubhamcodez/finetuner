@@ -17,11 +17,12 @@ from PySide6.QtWidgets import (
 from finetuner.core.job import ProjectConfig
 from finetuner.quantization.planner import detect_hardware
 from finetuner.quantization.specs import DeviceTarget, backend_specs, get_backend_spec
-from finetuner.ui.pipeline_context import PipelineContextBar
+from finetuner.ui.tool_run import ToolRunBar
 
 
 class DeploymentTab(QWidget):
     config_changed = Signal()
+    run_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -33,8 +34,9 @@ class DeploymentTab(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(6)
-        self.pipeline_context = PipelineContextBar()
-        layout.addWidget(self.pipeline_context)
+        self.run_bar = ToolRunBar("Run quantization")
+        self.run_bar.run_requested.connect(self.run_requested.emit)
+        layout.addWidget(self.run_bar)
         intro = QLabel("Create a quantized artifact matched to an inference backend and device.")
         intro.setObjectName("HintLabel")
         intro.setWordWrap(True)
@@ -96,6 +98,9 @@ class DeploymentTab(QWidget):
         self.group_size.valueChanged.connect(self._sync)
         self.calibration.textChanged.connect(self._sync)
         self.llama_path.textChanged.connect(self._sync)
+
+    def reload_from_config(self) -> None:
+        self._load_config()
 
     def _load_config(self) -> None:
         q = self.config.quantization

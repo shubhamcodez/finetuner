@@ -1,82 +1,41 @@
 # Architecture
 
-Finetuner separates product configuration from execution. The UI edits typed configurations; a
-validated workflow chooses which operations run; stage handlers produce typed artifacts; the manifest
-records lineage and status.
+Finetuner separates product configuration from execution. Each tool has its own typed settings and
+can be run on its own. A run writes artifacts and an atomic manifest for that tool only.
 
 ```mermaid
 flowchart LR
     UI["PySide6 product tabs"] --> CFG["Project configuration"]
-    CFG --> DAG["Validated workflow DAG"]
-    DAG --> EX["Workflow executor"]
-    EX --> TRAIN["TRL training handlers"]
-    EX --> KD["Distillation handlers"]
-    EX --> Q["Quantization handlers"]
-    EX --> EVAL["Evaluation handlers"]
-    EX --> ANA["Representation analysis"]
+    CFG --> ACT["Selected tool"]
+    ACT --> TRAIN["Train"]
+    ACT --> KD["Distill"]
+    ACT --> Q["Quantize"]
+    ACT --> OPT["Optimize inference"]
+    ACT --> EVAL["Evaluate"]
+    ACT --> ANA["Analyze"]
     TRAIN --> ART["Versioned artifacts"]
     KD --> ART
     Q --> ART
+    OPT --> ART
     EVAL --> ART
     ANA --> ART
-    EX --> MAN["Atomic run manifest"]
+    ACT --> MAN["Atomic run manifest"]
     ART --> MAN
 ```
 
-## Workflow schema
-
-A workflow has a stable identifier, schema version, and stages. Every stage has an identifier, kind,
-dependency list, parameters, and enabled flag. Validation rejects duplicate identifiers, missing or
-disabled dependencies, cycles, unsupported stage kinds, and unsupported schema versions.
-
-```json
-{
-  "schema_version": 1,
-  "id": "custom_alignment",
-  "name": "Custom alignment",
-  "stages": [
-    {
-      "id": "sft",
-      "name": "Instruction tuning",
-      "kind": "train",
-      "depends_on": [],
-      "parameters": {"method": "sft"},
-      "enabled": true
-    },
-    {
-      "id": "dpo",
-      "name": "Preference tuning",
-      "kind": "train",
-      "depends_on": ["sft"],
-      "parameters": {"method": "dpo", "dpo_beta": 0.1},
-      "enabled": true
-    },
-    {
-      "id": "evaluate",
-      "name": "Evaluate",
-      "kind": "evaluate",
-      "depends_on": ["dpo"],
-      "parameters": {},
-      "enabled": true
-    }
-  ]
-}
-```
-
-Stage parameters may override fields from the corresponding typed configuration. Arbitrary keys are
-not passed into trainer constructors.
+Tools share queued models and, when needed, the dataset on Data & Train. They do not wait on each
+other. If you want a quantized model as inference input, queue that artifact as a local model and run
+inference optimization.
 
 ## Artifact contracts
 
 - `policy_model`: an inference-capable policy or adapter produced by training/distillation
-- `reward_model`: a scalar reward checkpoint used by PPO-style stages
+- `reward_model`: a scalar reward checkpoint used by PPO-style training
 - `eval_results`: structured benchmark results
 - `analysis`: `representations.json` with layer points, metrics, and CKA matrix
 - `deployment_model`: a target-specific compressed artifact directory
+- `inference_engine`: a validated serve/compile plan (`inference_plan.json`) plus an optional compiled engine and `device_bind` probe for NVIDIA GPU, AMD GPU, or NPU
 - `distillation_manifest`: teacher/data-generation provenance
-
-PPO resolves policy and reward artifacts independently, preventing an easy-to-miss error where the
-reward checkpoint is accidentally used as the policy. Handlers see only declared direct dependencies.
 
 ## Reliability boundaries
 
@@ -84,9 +43,9 @@ reward checkpoint is accidentally used as the policy. Handlers see only declared
 - Untrusted model names and repository IDs are converted into collision-resistant, non-traversing path
   components.
 - Worker code depends on core model validation, never Qt UI modules.
-- Subprocesses use argument arrays with `shell=False`; workflow parameters are never interpolated into
+- Subprocesses use argument arrays with `shell=False`; tool settings are never interpolated into
   shell strings.
-- Cancellation is checked at stage boundaries. Trainer-level cooperative cancellation and resumable
+- Cancellation is checked before a tool starts. Trainer-level cooperative cancellation and resumable
   distributed checkpoints remain future work.
 - Run manifests are local provenance records, not a substitute for an external experiment tracker,
   artifact registry, access-control service, or audit-log sink.

@@ -25,8 +25,11 @@ def test_awq_requires_calibration_data():
 
 def test_recommendations_choose_npu_specific_runtimes():
     assert recommended_config(DeviceTarget.INTEL_NPU).backend == "openvino"
-    with pytest.raises(ValueError, match="QNN/QAIRT"):
-        recommended_config(DeviceTarget.QUALCOMM_NPU)
+    qualcomm = recommended_config(DeviceTarget.QUALCOMM_NPU)
+    assert qualcomm.backend == "onnx"
+    assert qualcomm.target == "qualcomm_npu"
+    assert qualcomm.extra_options["execution_provider"] == "QNNExecutionProvider"
+    assert QuantizationBackend.ONNX in compatible_backends(DeviceTarget.QUALCOMM_NPU)
     assert recommended_config(DeviceTarget.CPU).backend == "gguf"
 
 

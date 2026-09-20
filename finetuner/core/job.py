@@ -7,9 +7,8 @@ from typing import Any
 
 from finetuner.analysis.config import AnalysisConfig
 from finetuner.distillation.config import DistillationConfig
+from finetuner.inference.specs import InferenceOptimizationConfig
 from finetuner.quantization.specs import QuantizationConfig
-from finetuner.workflows.schema import WorkflowSpec
-from finetuner.workflows.templates import get_workflow_template, training_method_workflow
 
 
 class ModelSource(str, Enum):
@@ -24,6 +23,7 @@ class JobStatus(str, Enum):
     EVALUATING = "evaluating"
     DISTILLING = "distilling"
     QUANTIZING = "quantizing"
+    OPTIMIZING = "optimizing"
     ANALYZING = "analyzing"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -89,6 +89,7 @@ class ModelRunResult:
     manifest_path: str = ""
     analysis_path: str = ""
     deployment_path: str = ""
+    inference_path: str = ""
 
 
 @dataclass
@@ -98,8 +99,8 @@ class ProjectConfig:
     enabled_evals: list[str] = field(default_factory=lambda: ["mmlu", "gsm8k"])
     hf_token: str = ""
     eval_max_samples: int = 100
-    workflow: WorkflowSpec = field(default_factory=lambda: get_workflow_template("sft"))
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
+    inference: InferenceOptimizationConfig = field(default_factory=InferenceOptimizationConfig)
     distillation: DistillationConfig = field(default_factory=DistillationConfig)
     analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
 
@@ -142,8 +143,8 @@ class ProjectConfig:
             },
             "enabled_evals": self.enabled_evals,
             "eval_max_samples": self.eval_max_samples,
-            "workflow": self.workflow.to_dict(),
             "quantization": self.quantization.to_dict(),
+            "inference": self.inference.to_dict(),
             "distillation": self.distillation.to_dict(),
             "analysis": self.analysis.to_dict(),
         }
@@ -165,11 +166,6 @@ class ProjectConfig:
             for m in data.get("models", [])
         ]
         training = TrainingConfig(**filtered) if filtered else TrainingConfig()
-        workflow_data = data.get("workflow")
-        if workflow_data:
-            workflow = WorkflowSpec.from_dict(workflow_data)
-        else:
-            workflow = training_method_workflow(training.training_method)
         return cls(
             models=models,
             training=training,
@@ -177,8 +173,8 @@ class ProjectConfig:
             # Read legacy tokens once for migration; to_dict intentionally never persists them.
             hf_token=data.get("hf_token", ""),
             eval_max_samples=data.get("eval_max_samples", 100),
-            workflow=workflow,
             quantization=QuantizationConfig.from_dict(data.get("quantization")),
+            inference=InferenceOptimizationConfig.from_dict(data.get("inference")),
             distillation=DistillationConfig.from_dict(data.get("distillation")),
             analysis=AnalysisConfig.from_dict(data.get("analysis")),
         )

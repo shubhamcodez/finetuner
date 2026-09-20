@@ -1,66 +1,65 @@
 from __future__ import annotations
 
 from finetuner.core.job import ModelJob, ModelSource, ProjectConfig
-from finetuner.core.project_state import build_project_snapshot, workflow_requires_dataset
-from finetuner.workflows.schema import StageKind, WorkflowSpec, WorkflowStage
-from finetuner.workflows.templates import get_workflow_template
+from finetuner.core.project_state import build_project_snapshot
 
 
 def _configured_model() -> ModelJob:
     return ModelJob("Student", ModelSource.HUGGINGFACE, "org/student")
 
 
-def test_snapshot_collects_cross_tool_readiness_issues():
+def test_snapshot_lists_every_tool_independently():
     snapshot = build_project_snapshot(ProjectConfig())
 
-    assert not snapshot.ready
-    assert {issue.area for issue in snapshot.issues} == {"models", "training"}
-    assert [stage.stage_id for stage in snapshot.stages] == ["sft", "evaluate"]
-    training = next(area for area in snapshot.areas if area.area_id == "training")
-    assert training.included
-    assert not training.ready
+    areas = {area.area_id: area for area in snapshot.areas}
+    assert set(areas) == {
+        "models",
+        "training",
+        "distillation",
+        "evals",
+        "analysis",
+        "deployment",
+        "inference",
+    }
+    assert all(area.included for area in snapshot.areas)
+    assert not areas["models"].ready
+    assert not areas["training"].ready
+    assert not areas["evals"].ready
+    assert not areas["deployment"].ready
+    assert not areas["inference"].ready
 
 
-def test_snapshot_is_ready_when_shared_sft_inputs_are_configured():
+def test_training_is_ready_when_models_and_dataset_are_configured():
     config = ProjectConfig(models=[_configured_model()])
     config.training.dataset_preset_id = "alpaca"
     config.training.dataset_use_bundled_only = True
 
     snapshot = build_project_snapshot(config)
-
-    assert snapshot.ready
-    assert not snapshot.issues
+    training = next(area for area in snapshot.areas if area.area_id == "training")
     evals = next(area for area in snapshot.areas if area.area_id == "evals")
-    deployment = next(area for area in snapshot.areas if area.area_id == "deployment")
-    assert evals.included and evals.ready
-    assert not deployment.included
+    assert training.ready
+    assert evals.ready
+    assert training.action == "train"
 
 
-def test_distillation_readiness_is_owned_by_distillation_area():
-    config = ProjectConfig(
-        models=[_configured_model()], workflow=get_workflow_template("distill_deploy")
-    )
+def test_distillation_readiness_is_owned_by_the_distillation_tool():
+    config = ProjectConfig(models=[_configured_model()])
     config.training.dataset_preset_id = "alpaca"
 
     snapshot = build_project_snapshot(config)
-
-    messages = [issue.message for issue in snapshot.issues if issue.area == "distillation"]
-    assert "teacher model is required" in messages
-    assert "student model is required" in messages
-    deployment = next(area for area in snapshot.areas if area.area_id == "deployment")
-    assert deployment.included and deployment.ready
+    distillation = next(area for area in snapshot.areas if area.area_id == "distillation")
+    assert not distillation.ready
+    assert "teacher model is required" in distillation.issues
+    assert "student model is required" in distillation.issues
 
 
-def test_deployment_only_workflow_does_not_require_a_dataset():
-    workflow = WorkflowSpec(
-        "deploy",
-        "Deploy only",
-        (WorkflowStage("quantize", "Quantize", StageKind.QUANTIZE),),
-    )
-    config = ProjectConfig(models=[_configured_model()], workflow=workflow)
+def test_deployment_and_inference_do_not_require_a_dataset():
+    config = ProjectConfig(models=[_configured_model()])
 
-    assert not workflow_requires_dataset(config)
     snapshot = build_project_snapshot(config)
-    assert snapshot.ready
-    training = next(area for area in snapshot.areas if area.area_id == "training")
-    assert not training.included
+    deployment = next(area for area in snapshot.areas if area.area_id == "deployment")
+    inference = next(area for area in snapshot.areas if area.area_id == "inference")
+    assert deployment.ready
+    assert inference.ready
+    assert "dataset" not in " ".join(deployment.issues).lower()
+    assert "dataset" not in " ".join(inference.issues).lower()

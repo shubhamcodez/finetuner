@@ -18,21 +18,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from finetuner.core.actions import ActionKind, get_action
 from finetuner.core.config_store import load_config, save_config
 from finetuner.core.job import ModelRunResult, ProjectConfig
-from finetuner.core.project_state import build_project_snapshot
+from finetuner.core.preflight import collect_action_issues
 from finetuner.ui.branding import app_icon
 from finetuner.ui.analysis_tab import AnalysisTab
 from finetuner.ui.deployment_tab import DeploymentTab
 from finetuner.ui.distillation_tab import DistillationTab
+from finetuner.ui.inference_tab import InferenceTab
 from finetuner.ui.evals_tab import EvalsTab
 from finetuner.ui.models_tab import ModelsTab
 from finetuner.ui.monitor_tab import MonitorTab
 from finetuner.ui.project_tab import ProjectTab
 from finetuner.ui.results_tab import ResultsTab
 from finetuner.ui.training_tab import TrainingTab
-from finetuner.ui.workflows_tab import WorkflowsTab
-from finetuner.workflows.schema import StageKind
 
 if TYPE_CHECKING:
     from finetuner.core.queue import JobQueue
@@ -46,9 +46,10 @@ class QueueWorker(QThread):
     finished_all = Signal(object)
     stage_event = Signal(object)
 
-    def __init__(self, config: ProjectConfig, parent=None) -> None:
+    def __init__(self, config: ProjectConfig, action: str, parent=None) -> None:
         super().__init__(parent)
         self.config = config
+        self.action = action
         self._queue: JobQueue | None = None
 
     def cancel(self) -> None:
@@ -60,6 +61,7 @@ class QueueWorker(QThread):
 
         self._queue = JobQueue(
             config=self.config,
+            action=self.action,
             log_callback=lambda msg: self.log_line.emit(msg),
             progress_callback=lambda phase, cur, total: self.progress.emit(phase, cur, total),
             model_done_callback=lambda r: self.model_done.emit(r),
@@ -97,9 +99,9 @@ class MainWindow(QMainWindow):
         self.project_tab = ProjectTab(self.config)
         self.models_tab = ModelsTab(self.config)
         self.training_tab = TrainingTab(self.config)
-        self.workflows_tab = WorkflowsTab(self.config)
         self.distillation_tab = DistillationTab(self.config)
         self.deployment_tab = DeploymentTab(self.config)
+        self.inference_tab = InferenceTab(self.config)
         self.evals_tab = EvalsTab(self.config)
         self.analysis_tab = AnalysisTab(self.config)
         self.results_tab = ResultsTab()
@@ -108,11 +110,11 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.project_tab, "Project")
         self.tabs.addTab(self.models_tab, "Models")
         self.tabs.addTab(self.training_tab, "Data & Train")
-        self.tabs.addTab(self.workflows_tab, "Workflow")
         self.tabs.addTab(self.distillation_tab, "Distillation")
         self.tabs.addTab(self.evals_tab, "Evaluation")
         self.tabs.addTab(self.analysis_tab, "Analysis")
         self.tabs.addTab(self.deployment_tab, "Deployment")
+        self.tabs.addTab(self.inference_tab, "Inference")
         self.tabs.addTab(self.results_tab, "Results")
         self.tabs.addTab(self.monitor_tab, "System")
 
@@ -120,13 +122,21 @@ class MainWindow(QMainWindow):
             "project": self.project_tab,
             "models": self.models_tab,
             "training": self.training_tab,
-            "workflow": self.workflows_tab,
             "distillation": self.distillation_tab,
             "evals": self.evals_tab,
             "analysis": self.analysis_tab,
             "deployment": self.deployment_tab,
+            "inference": self.inference_tab,
             "results": self.results_tab,
             "monitor": self.monitor_tab,
+        }
+        self._action_by_tab = {
+            self.training_tab: ActionKind.TRAIN.value,
+            self.distillation_tab: ActionKind.DISTILL.value,
+            self.evals_tab: ActionKind.EVALUATE.value,
+            self.analysis_tab: ActionKind.ANALYZE.value,
+            self.deployment_tab: ActionKind.QUANTIZE.value,
+            self.inference_tab: ActionKind.OPTIMIZE.value,
         }
 
         splitter.addWidget(self.tabs)
@@ -138,9 +148,9 @@ class MainWindow(QMainWindow):
         for tab in (
             self.models_tab,
             self.training_tab,
-            self.workflows_tab,
             self.distillation_tab,
             self.deployment_tab,
+            self.inference_tab,
             self.evals_tab,
             self.analysis_tab,
         ):
@@ -150,15 +160,15 @@ class MainWindow(QMainWindow):
         self.results_tab.artifact_requested.connect(self._open_result_artifact)
         self.project_tab.navigate_requested.connect(self._navigate_to)
         self.project_tab.run_requested.connect(self._start_run)
-        for tab in (
-            self.training_tab,
-            self.distillation_tab,
-            self.deployment_tab,
-            self.evals_tab,
-            self.analysis_tab,
-        ):
-            tab.pipeline_context.workflow_requested.connect(lambda: self._navigate_to("workflow"))
-        self._refresh_project_context()
+        self.training_tab.run_requested.connect(lambda: self._start_run(ActionKind.TRAIN.value))
+        self.distillation_tab.run_requested.connect(lambda: self._start_run(ActionKind.DISTILL.value))
+        self.evals_tab.run_requested.connect(lambda: self._start_run(ActionKind.EVALUATE.value))
+        self.analysis_tab.run_requested.connect(lambda: self._start_run(ActionKind.ANALYZE.value))
+        self.deployment_tab.run_requested.connect(lambda: self._start_run(ActionKind.QUANTIZE.value))
+        self.inference_tab.run_requested.connect(lambda: self._start_run(ActionKind.OPTIMIZE.value))
+        self.inference_tab.quantization_changed.connect(self.deployment_tab.reload_from_config)
+        self.tabs.currentChanged.connect(self._update_run_button)
+        self._update_run_button()
 
     def _build_header(self) -> QFrame:
         header = QFrame()
@@ -194,7 +204,7 @@ class MainWindow(QMainWindow):
         self.run_btn = QPushButton("Start Run")
         self.run_btn.setObjectName("PrimaryButton")
         self.run_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.run_btn.clicked.connect(self._start_run)
+        self.run_btn.clicked.connect(lambda: self._start_run())
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setObjectName("SecondaryButton")
@@ -230,7 +240,7 @@ class MainWindow(QMainWindow):
     def _on_config_changed(self) -> None:
         self._save_config()
         self.project_tab.refresh()
-        self._refresh_project_context()
+        self._update_run_button()
 
     def _navigate_to(self, area: str) -> None:
         target = self._tab_by_area.get(area)
@@ -240,31 +250,23 @@ class MainWindow(QMainWindow):
     def _open_result_artifact(self, area: str, path: str) -> None:
         if area == "analysis":
             self.analysis_tab.set_artifact(path)
+        if area == "inference":
+            self.inference_tab.set_artifact(path)
         self._navigate_to(area)
 
-    def _refresh_project_context(self) -> None:
-        stages_by_kind: dict[StageKind, list[str]] = {kind: [] for kind in StageKind}
-        for stage in self.config.workflow.topological_stages():
-            stages_by_kind[stage.kind].append(stage.name)
-        workflow_name = self.config.workflow.name
-        data_consumers = [
-            stage.name
-            for stage in self.config.workflow.topological_stages()
-            if stage.kind in {StageKind.TRAIN, StageKind.DISTILL, StageKind.ANALYZE}
-        ]
-        self.training_tab.pipeline_context.set_context(workflow_name, data_consumers)
-        self.distillation_tab.pipeline_context.set_context(
-            workflow_name, stages_by_kind[StageKind.DISTILL]
-        )
-        self.evals_tab.pipeline_context.set_context(
-            workflow_name, stages_by_kind[StageKind.EVALUATE]
-        )
-        self.analysis_tab.pipeline_context.set_context(
-            workflow_name, stages_by_kind[StageKind.ANALYZE]
-        )
-        self.deployment_tab.pipeline_context.set_context(
-            workflow_name, stages_by_kind[StageKind.QUANTIZE]
-        )
+    def _current_action(self) -> str | None:
+        return self._action_by_tab.get(self.tabs.currentWidget())
+
+    def _update_run_button(self, _index: int = 0) -> None:
+        action = self._current_action()
+        running = bool(self._worker and self._worker.isRunning())
+        if action:
+            spec = get_action(action)
+            self.run_btn.setText(f"Run {spec.title}")
+            self.run_btn.setEnabled(not running)
+        else:
+            self.run_btn.setText("Run selected tool")
+            self.run_btn.setEnabled(False)
 
     def _on_evals_suggest(self, eval_ids: list[str]) -> None:
         self.evals_tab.apply_selection(eval_ids)
@@ -273,21 +275,29 @@ class MainWindow(QMainWindow):
     def _append_log(self, msg: str) -> None:
         self.log_view.appendPlainText(msg)
 
-    def _start_run(self) -> None:
-        snapshot = build_project_snapshot(self.config)
-        if not snapshot.ready:
-            messages = list(dict.fromkeys(issue.message for issue in snapshot.issues))
+    def _start_run(self, action: str | None = None) -> None:
+        selected = action or self._current_action()
+        if not selected:
+            QMessageBox.information(
+                self,
+                "Choose a tool",
+                "Open Training, Distillation, Evaluation, Analysis, Deployment, or Inference, then run that tool.",
+            )
+            return
+        issues = collect_action_issues(self.config, selected)
+        if issues:
+            messages = list(dict.fromkeys(issue.message for issue in issues))
             QMessageBox.warning(
                 self,
-                "Project Not Ready",
-                "Resolve these project items before running:\n\n" + "\n".join(messages),
+                "Tool Not Ready",
+                "Resolve these items before running:\n\n" + "\n".join(messages),
             )
-            first_area = snapshot.issues[0].area if snapshot.issues else "project"
-            self._navigate_to(first_area)
+            self._navigate_to(issues[0].area)
             return
         if self._worker and self._worker.isRunning():
             return
 
+        spec = get_action(selected)
         self._save_config()
         self.log_view.clear()
         self.results_tab.set_results([])
@@ -296,9 +306,9 @@ class MainWindow(QMainWindow):
         self.run_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.status_label.setText("Running")
-        self._append_log(f"Starting workflow: {self.config.workflow.name}")
+        self._append_log(f"Starting {spec.title.lower()}")
 
-        self._worker = QueueWorker(self.config, self)
+        self._worker = QueueWorker(self.config, selected, self)
         self._worker.log_line.connect(self._append_log)
         self._worker.progress.connect(self._on_progress)
         self._worker.download_progress.connect(self._on_download_progress)
@@ -322,26 +332,28 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Download {percent}%")
 
     def _on_stage_event(self, event) -> None:
-        self.project_tab.handle_stage_event(event)
+        self.project_tab.handle_action_event(event)
         self.run_progress.setVisible(True)
         complete = event.index if event.status == "completed" else event.index - 1
         self.run_progress.setValue(round(complete / max(event.total, 1) * 100))
-        self.status_label.setText(f"{event.stage_name} {event.index}/{event.total}")
+        self.status_label.setText(f"{event.action_name} {event.index}/{event.total}")
 
     def _on_model_done(self, result: ModelRunResult) -> None:
         self.results_tab.add_result(result)
         self.project_tab.add_result(result)
         if result.analysis_path:
             self.analysis_tab.set_artifact(result.analysis_path)
+        if result.inference_path:
+            self.inference_tab.set_artifact(result.inference_path)
 
     def _on_finished(self, _results: list) -> None:
-        self.run_btn.setEnabled(True)
         self.cancel_btn.setEnabled(False)
         self.run_progress.setVisible(False)
         self.run_progress.setValue(0)
         self.status_label.setText("Complete")
         self.project_tab.set_running(False)
-        self._append_log("All models processed.")
+        self._update_run_button()
+        self._append_log("Run finished.")
 
     def closeEvent(self, event) -> None:
         if self._worker and self._worker.isRunning():

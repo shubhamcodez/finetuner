@@ -19,11 +19,12 @@ from finetuner.core.job import ProjectConfig
 from finetuner.core.model_catalog import discover_downloaded_models
 from finetuner.distillation.config import DistillationTechnique
 from finetuner.distillation.domains import DOMAIN_PRESETS
-from finetuner.ui.pipeline_context import PipelineContextBar
+from finetuner.ui.tool_run import ToolRunBar
 
 
 class DistillationTab(QWidget):
     config_changed = Signal()
+    run_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -36,8 +37,9 @@ class DistillationTab(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(6)
-        self.pipeline_context = PipelineContextBar()
-        layout.addWidget(self.pipeline_context)
+        self.run_bar = ToolRunBar("Run distillation")
+        self.run_bar.run_requested.connect(self.run_requested.emit)
+        layout.addWidget(self.run_bar)
         intro = QLabel(
             "Transfer a teacher into a smaller student; tokenizer compatibility depends on technique."
         )
@@ -181,5 +183,5 @@ class DistillationTab(QWidget):
         self.form.setRowVisible(self.custom_domain, d.domain.mode == "custom")
         self.custom_domain.setEnabled(d.domain.mode == "custom")
         errors = d.validate()
-        self.status.setText("; ".join(errors) if errors else "Ready for a Distill stage.")
+        self.status.setText("; ".join(errors) if errors else "Ready to distill.")
         self.config_changed.emit()

@@ -1,23 +1,25 @@
 from __future__ import annotations
 
 from finetuner.core.job import ProjectConfig
-from finetuner.workflows.templates import get_workflow_template
 
 
 def test_config_round_trip_includes_product_pipelines():
-    config = ProjectConfig(workflow=get_workflow_template("rlhf"))
+    config = ProjectConfig()
     config.quantization.backend = "openvino"
     config.quantization.target = "intel_npu"
     config.distillation.teacher_model = "teacher/model"
     config.distillation.student_model = "student/model"
     config.analysis.reducer = "tsne"
+    config.inference.engine = "vllm"
+    config.inference.target = "nvidia_gpu"
     config.training.lora_target_modules = ["q_proj", "v_proj"]
     restored = ProjectConfig.from_dict(config.to_dict())
-    assert restored.workflow.workflow_id == "rlhf"
     assert restored.quantization.target == "intel_npu"
     assert restored.distillation.teacher_model == "teacher/model"
     assert restored.analysis.reducer == "tsne"
+    assert restored.inference.engine == "vllm"
     assert restored.training.lora_target_modules == ["q_proj", "v_proj"]
+    assert "workflow" not in config.to_dict()
 
 
 def test_hugging_face_token_is_never_serialized():
@@ -27,10 +29,15 @@ def test_hugging_face_token_is_never_serialized():
     assert "hf_secret" not in repr(payload)
 
 
-def test_legacy_config_migrates_training_method_to_workflow():
+def test_legacy_workflow_key_is_ignored():
     restored = ProjectConfig.from_dict(
-        {"training": {"training_method": "dpo"}, "hf_token": "legacy"}
+        {
+            "training": {"training_method": "dpo"},
+            "hf_token": "legacy",
+            "workflow": {"id": "dpo", "name": "SFT + DPO alignment", "stages": []},
+        }
     )
-    assert restored.workflow.workflow_id == "dpo"
+    assert restored.training.training_method == "dpo"
     assert restored.hf_token == "legacy"
+    assert "workflow" not in restored.to_dict()
     assert "hf_token" not in restored.to_dict()

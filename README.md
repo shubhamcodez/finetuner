@@ -1,12 +1,13 @@
 # Finetuner
 
-Finetuner is a local desktop workbench for reproducible LLM post-training. It combines workflow-driven
-training, preference optimization, knowledge distillation, evaluation, representation analysis, and
-target-aware model compression in one PySide6 application.
+Finetuner is a local desktop workbench for reproducible LLM post-training. Training, preference
+optimization, knowledge distillation, evaluation, representation analysis, target-aware compression,
+and inference-engine optimization each run as their own tool.
 
 ## Product capabilities
 
-- Validated workflow DAGs with built-in SFT, DPO, KTO, GRPO, classic RLHF, and distill/deploy templates
+- Independent tools: train, distill, evaluate, analyze, quantize, and optimize inference without a
+  shared DAG
 - SFT, DPO, GRPO, PPO, KTO, reward-model, ORPO, and RLOO trainers through TRL
 - Real preference-schema validation; synthetic negative responses are opt-in and deterministic
 - Sequence knowledge distillation across model families plus experimental logit/GKD techniques for
@@ -15,6 +16,11 @@ target-aware model compression in one PySide6 application.
   safety, arbitrary custom topics, or all data
 - GGUF, OpenVINO INT4/INT8, ONNX Runtime INT8, and AWQ deployment pipelines with an explicit
   backend/device compatibility matrix
+- Inference-engine optimization for llama.cpp, vLLM, TensorRT-LLM, OpenVINO, ONNX Runtime, and TGI:
+  KV-cache dtype, context/batch, tensor parallelism, prefix caching, CUDA graphs, and optional
+  ahead-of-time compile/cache plans matched to the same device matrix. One-button recipes bind
+  NVIDIA CUDA (vLLM or llama.cpp), AMD (llama.cpp Vulkan/HIP), Intel NPU (OpenVINO), and Qualcomm
+  Hexagon NPU (ONNX Runtime QNN/HTP)
 - PCA, t-SNE, or UMAP hidden-state projections by layer, activation norms, attention entropy, and
   cross-layer centered-kernel alignment (CKA)
 - Atomic run manifests containing stage status, duration, metrics, configuration digest, and artifact
@@ -24,7 +30,10 @@ target-aware model compression in one PySide6 application.
 Finetuner does not claim that one artifact runs optimally on every accelerator. Deployment is planned
 against a concrete runtime and device: GGUF for broad CPU/GPU support, OpenVINO for supported Intel
 CPU/GPU/NPU systems, ONNX Runtime INT8 for CPU, and AWQ for compatible NVIDIA inference stacks.
-Unsupported combinations are rejected before conversion.
+Serving is planned the same way: llama.cpp for GGUF on CPU and AMD/Apple/NVIDIA GPUs, vLLM or
+TensorRT-LLM for NVIDIA Hugging Face/AWQ artifacts, OpenVINO for Intel IR, ONNX Runtime for CPU ONNX
+graphs, ONNX Runtime QNN/HTP for Qualcomm NPUs, and TGI for Hugging Face serving. Unsupported
+combinations are rejected before conversion or compilation.
 
 ## Development
 
@@ -44,7 +53,9 @@ pip install -e ".[onnx]"           # ONNX Runtime INT8 CPU
 pip install llm-awq                 # NVIDIA AWQ
 ```
 
-GGUF conversion requires a local llama.cpp checkout/build selected in the Deploy tab.
+GGUF conversion requires a local llama.cpp checkout/build selected in the Deploy tab. Inference
+optimization writes a serve/compile plan without those toolchains; enable Compile only when
+TensorRT-LLM, OpenVINO, or ONNX Runtime is installed and you want a materialized engine.
 
 ## Tests
 
@@ -58,11 +69,11 @@ small checkpoints in a dedicated CI job.
 
 ## Reproducibility and secrets
 
-Each model run writes `manifest.json` incrementally and atomically. The manifest captures the exact
-workflow and a digest of the redacted project configuration. Hugging Face tokens are held in memory or
+Each tool run writes `manifest.json` incrementally and atomically. The manifest captures the action
+and a digest of the redacted project configuration. Hugging Face tokens are held in memory or
 read from `HF_TOKEN`; they are intentionally not written to `config.json` or run manifests.
 
-See [the workflow architecture](docs/ARCHITECTURE.md) and [research rationale](docs/RESEARCH.md).
+See [the architecture](docs/ARCHITECTURE.md) and [research rationale](docs/RESEARCH.md).
 
 ## Build the Windows installer
 
