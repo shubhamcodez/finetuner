@@ -81,7 +81,13 @@ def run_reloader() -> int:
         while True:
             time.sleep(_POLL_SECONDS)
             if process.poll() is not None:
-                return process.returncode or 0
+                if process.returncode == 0:
+                    return 0
+                print("Finetuner exited with an error; restarting.", flush=True)
+                time.sleep(0.8)
+                process = _start_child()
+                previous = file_snapshot()
+                continue
             current = file_snapshot()
             changed = snapshot_changed(previous, current)
             if not changed:

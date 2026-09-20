@@ -67,7 +67,7 @@ The window has a header status badge, product tabs, and a **Run Console** at the
 | **Deployment** | Quantize a queued model for a concrete backend and device. |
 | **Inference** | Detect device, optional optimize, then serve on port 1234. |
 | **Results** | Per-model scores and artifact links from the latest run. |
-| **System** | Live CPU, RAM, NVIDIA GPU, and NPU utilization. |
+| **System** | Live CPU, RAM, NVIDIA GPU, NPU, and TPU utilization. |
 
 Settings save automatically to `%LOCALAPPDATA%\.finetuner\config.json`. Hugging Face tokens are not written there; they stay in memory or come from `HF_TOKEN`.
 
@@ -321,7 +321,7 @@ There is no single kernel that is fastest on Hexagon, CUDA, and Apple GPU. The a
 
 **Results** compares the latest run across queued models: eval scores plus Policy / Analysis / Deployment / Inference readiness. Double-click a **Ready** cell to open that artifact (analysis plot or inference plan).
 
-**System** polls CPU, RAM, NVIDIA GPU, and NPU once per second so you can see whether a run is compute-bound or memory-bound.
+**System** polls CPU, RAM, NVIDIA GPU, NPU, and TPU once per second so you can see whether a run is compute-bound or memory-bound.
 
 ## Hardware pairing
 

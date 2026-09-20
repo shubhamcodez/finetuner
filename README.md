@@ -28,7 +28,7 @@ notes live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/RESEARCH.md
   cross-layer centered-kernel alignment (CKA)
 - Atomic run manifests containing stage status, duration, metrics, configuration digest, and artifact
   lineage
-- CPU, RAM, NVIDIA GPU, and NPU monitoring; Hugging Face/local model management; benchmark comparison
+- CPU, RAM, NVIDIA GPU, NPU, and TPU monitoring; Hugging Face/local model management; benchmark comparison
 
 Finetuner does not claim that one artifact runs optimally on every accelerator. Deployment is planned
 against a concrete runtime and device: GGUF for broad CPU/GPU support, OpenVINO for supported Intel

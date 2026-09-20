@@ -95,9 +95,17 @@ def test_system_tab_renders_npu_stats(app):
             npu_util_percent=42.0,
             npu_mem_used_gb=0.7,
             npu_mem_shared_gb=0.2,
+            tpu_available=True,
+            tpu_name="Coral Edge TPU",
+            tpu_util_percent=18.0,
+            tpu_mem_used_gb=0.5,
+            tpu_mem_total_gb=8.0,
+            tpu_detail="Local Edge TPU",
         )
     )
     assert "42" in tab.npu_card.value_label.text()
     assert "Hexagon" in tab.npu_card.detail_label.text()
     assert "0.7" in tab.npu_mem_card.value_label.text()
+    assert "18" in tab.tpu_card.value_label.text()
+    assert "Coral" in tab.tpu_card.detail_label.text()
     tab.shutdown()

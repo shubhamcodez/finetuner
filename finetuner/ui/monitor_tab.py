@@ -112,7 +112,7 @@ class MonitorTab(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
 
-        intro = QLabel("Live CPU, RAM, GPU, and NPU metrics.")
+        intro = QLabel("Live CPU, RAM, GPU, NPU, and TPU metrics.")
         intro.setObjectName("HintLabel")
         layout.addWidget(intro)
 
@@ -149,22 +149,28 @@ class MonitorTab(QWidget):
         self.vram_card = MetricCard("GPU Memory")
         self.npu_card = MetricCard("NPU Utilization")
         self.npu_mem_card = MetricCard("NPU Memory")
+        self.tpu_card = MetricCard("TPU Utilization")
+        self.tpu_mem_card = MetricCard("TPU Memory")
         cards.addWidget(self.cpu_card, 0, 0)
         cards.addWidget(self.ram_card, 0, 1)
         cards.addWidget(self.gpu_card, 1, 0)
         cards.addWidget(self.vram_card, 1, 1)
         cards.addWidget(self.npu_card, 2, 0)
         cards.addWidget(self.npu_mem_card, 2, 1)
+        cards.addWidget(self.tpu_card, 3, 0)
+        cards.addWidget(self.tpu_mem_card, 3, 1)
         layout.addLayout(cards)
 
-        charts = QHBoxLayout()
+        charts = QGridLayout()
         charts.setSpacing(8)
         self.cpu_chart = HistoryChart("CPU History", y_max=100)
         self.gpu_chart = HistoryChart("GPU History", y_max=100)
         self.npu_chart = HistoryChart("NPU History", y_max=100)
-        charts.addWidget(self.cpu_chart)
-        charts.addWidget(self.gpu_chart)
-        charts.addWidget(self.npu_chart)
+        self.tpu_chart = HistoryChart("TPU History", y_max=100)
+        charts.addWidget(self.cpu_chart, 0, 0)
+        charts.addWidget(self.gpu_chart, 0, 1)
+        charts.addWidget(self.npu_chart, 1, 0)
+        charts.addWidget(self.tpu_chart, 1, 1)
         layout.addLayout(charts)
 
         self.gpu_status = QLabel("")
@@ -175,6 +181,10 @@ class MonitorTab(QWidget):
         self.npu_status.setObjectName("MutedLabel")
         self.npu_status.setWordWrap(True)
         layout.addWidget(self.npu_status)
+        self.tpu_status = QLabel("")
+        self.tpu_status.setObjectName("MutedLabel")
+        self.tpu_status.setWordWrap(True)
+        layout.addWidget(self.tpu_status)
         layout.addStretch()
 
         scroll.setWidget(content)
@@ -231,11 +241,36 @@ class MonitorTab(QWidget):
                 "NPU unavailable. Qualcomm Hexagon and Intel NPUs appear here when Windows exposes them."
             )
 
+        if stats.tpu_available:
+            self.tpu_card.set_value(
+                f"{stats.tpu_util_percent:.0f}%",
+                stats.tpu_name,
+            )
+            self.tpu_chart.append(stats.tpu_util_percent)
+            if stats.tpu_mem_total_gb:
+                self.tpu_mem_card.set_value(
+                    f"{stats.tpu_mem_used_gb:.1f} GB",
+                    f"{stats.tpu_mem_total_gb:.1f} GB · {stats.tpu_detail}".strip(" ·"),
+                )
+            elif stats.tpu_mem_used_gb:
+                self.tpu_mem_card.set_value(f"{stats.tpu_mem_used_gb:.1f} GB", stats.tpu_detail)
+            else:
+                self.tpu_mem_card.set_value("—", stats.tpu_detail or "No HBM counters")
+            self.tpu_status.setText(f"TPU active — {stats.tpu_name or 'TPU'}")
+        else:
+            self.tpu_card.set_value("Unavailable", "No TPU detected")
+            self.tpu_mem_card.set_value("—", "")
+            self.tpu_status.setText(
+                "TPU unavailable. Coral Edge TPU or a Cloud TPU runtime appears here when present."
+            )
+
         if "compute" in getattr(self, "health_rows", {}):
             if stats.gpu_available:
                 compute = "Healthy"
             elif stats.npu_available:
                 compute = "NPU"
+            elif stats.tpu_available:
+                compute = "TPU"
             else:
                 compute = "CPU only"
             self.health_rows["compute"].setText(compute)

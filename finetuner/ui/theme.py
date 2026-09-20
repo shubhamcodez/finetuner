@@ -75,12 +75,19 @@ class Theme:
 def _sheet(font: str) -> str:
     t = Token
     return f"""
-QMainWindow, QWidget {{
+QMainWindow, QDialog, QMessageBox, #AppShell {{
     background-color: {t.BG};
     color: {t.TEXT};
     font-family: "{font}";
     font-size: 14px;
     font-weight: 400;
+}}
+QLabel {{
+    background-color: transparent;
+    color: {t.TEXT};
+}}
+QStackedWidget {{
+    background-color: {t.BG};
 }}
 
 #AppShell {{
@@ -91,12 +98,13 @@ QMainWindow, QWidget {{
     border-right: 1px solid {t.BORDER_SUBTLE};
 }}
 #SidebarBrand {{
-    background: transparent;
+    background-color: transparent;
     color: {t.TEXT};
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 400;
 }}
 #SidebarCaption {{
+    background-color: transparent;
     color: {t.TEXT_TERTIARY};
     font-size: 12px;
 }}
@@ -119,7 +127,7 @@ QPushButton#NavItem:hover {{
 QPushButton#NavItem[selected="true"] {{
     background-color: {t.ACCENT_SUBTLE};
     color: {t.TEXT};
-    font-weight: 600;
+    font-weight: 400;
 }}
 QPushButton#IconButton {{
     background: transparent;
@@ -138,32 +146,38 @@ QPushButton#IconButton:hover {{
 }}
 
 #Eyebrow {{
+    background-color: transparent;
     color: {t.TEXT_TERTIARY};
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 400;
     letter-spacing: 0.8px;
 }}
 #PageTitle {{
+    background-color: transparent;
     color: {t.TEXT};
     font-size: 28px;
-    font-weight: 600;
+    font-weight: 400;
 }}
 #PageSubtitle {{
+    background-color: transparent;
     color: {t.TEXT_SECONDARY};
     font-size: 14px;
     font-weight: 400;
 }}
 #SectionTitle {{
+    background-color: transparent;
     color: {t.TEXT};
     font-size: 18px;
-    font-weight: 600;
+    font-weight: 400;
 }}
 #CardTitle {{
+    background-color: transparent;
     color: {t.TEXT};
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 400;
 }}
 #MetaLabel {{
+    background-color: transparent;
     color: {t.TEXT_TERTIARY};
     font-size: 12px;
 }}
@@ -184,7 +198,7 @@ QPushButton#IconButton:hover {{
 #StepNumber {{
     color: {t.ACCENT};
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 400;
     background: transparent;
     border: none;
 }}
@@ -196,7 +210,7 @@ QGroupBox {{
     margin-top: 12px;
     padding: 20px 20px 16px 20px;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 400;
     color: {t.TEXT};
 }}
 QGroupBox::title {{
@@ -204,9 +218,10 @@ QGroupBox::title {{
     subcontrol-position: top left;
     left: 16px;
     padding: 0 6px;
+    background-color: {t.SURFACE};
     color: {t.TEXT_SECONDARY};
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 400;
 }}
 
 QPushButton {{
@@ -217,7 +232,7 @@ QPushButton {{
     padding: 0 14px;
     min-height: 36px;
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 400;
 }}
 QPushButton:hover {{
     background-color: {t.HOVER};
@@ -337,10 +352,11 @@ QHeaderView::section {{
     border-bottom: 1px solid {t.BORDER};
     padding: 10px;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 400;
 }}
 
 QCheckBox {{
+    background-color: transparent;
     spacing: 8px;
     color: {t.TEXT};
     font-size: 13px;
@@ -382,16 +398,19 @@ QProgressBar::chunk {{
     font-size: 12px;
 }}
 #HintLabel, #MutedLabel {{
+    background-color: transparent;
     color: {t.TEXT_SECONDARY};
     font-size: 13px;
     font-weight: 400;
 }}
 #MetricValue {{
+    background-color: transparent;
     font-size: 20px;
-    font-weight: 600;
+    font-weight: 400;
     color: {t.TEXT};
 }}
 #MetricDetail {{
+    background-color: transparent;
     font-size: 12px;
     color: {t.TEXT_SECONDARY};
 }}
@@ -414,19 +433,22 @@ QProgressBar::chunk {{
     padding: 4px 10px;
     color: {t.TEXT};
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 400;
 }}
 #AdvancedToggle {{
     background: transparent;
     border: none;
     color: {t.TEXT_SECONDARY};
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 400;
     padding: 4px 0;
 }}
 QScrollArea {{
     border: none;
-    background: transparent;
+    background-color: {t.BG};
+}}
+QScrollArea > QWidget > QWidget {{
+    background-color: {t.BG};
 }}
 QScrollBar:vertical {{
     background: transparent;

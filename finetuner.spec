@@ -66,6 +66,8 @@ a = Analysis(
         "finetuner.eval.runner",
         "finetuner.eval.tasks",
         "PySide6.QtCharts",
+        "qtawesome",
+        "qtpy",
         "trl",
         "peft",
         "transformers",

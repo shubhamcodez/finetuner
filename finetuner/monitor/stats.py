@@ -21,6 +21,12 @@ class SystemStats:
     npu_util_percent: float = 0.0
     npu_mem_used_gb: float = 0.0
     npu_mem_shared_gb: float = 0.0
+    tpu_available: bool = False
+    tpu_name: str = ""
+    tpu_util_percent: float = 0.0
+    tpu_mem_used_gb: float = 0.0
+    tpu_mem_total_gb: float = 0.0
+    tpu_detail: str = ""
 
 
 class StatsCollector:
@@ -91,6 +97,7 @@ class StatsCollector:
             except Exception:
                 stats.gpu_available = False
         from finetuner.monitor.npu import NpuCollector
+        from finetuner.monitor.tpu import TpuCollector
 
         npu = NpuCollector.collect()
         stats.npu_available = npu.available
@@ -98,6 +105,13 @@ class StatsCollector:
         stats.npu_util_percent = npu.util_percent
         stats.npu_mem_used_gb = npu.mem_used_gb
         stats.npu_mem_shared_gb = npu.mem_shared_gb
+        tpu = TpuCollector.collect()
+        stats.tpu_available = tpu.available
+        stats.tpu_name = tpu.name
+        stats.tpu_util_percent = tpu.util_percent
+        stats.tpu_mem_used_gb = tpu.mem_used_gb
+        stats.tpu_mem_total_gb = tpu.mem_total_gb
+        stats.tpu_detail = tpu.detail
         return stats
 
 
@@ -123,5 +137,7 @@ class StatsPoller(QObject):
         self._timer.stop()
         StatsCollector.shutdown_nvml()
         from finetuner.monitor.npu import NpuCollector
+        from finetuner.monitor.tpu import TpuCollector
 
         NpuCollector.shutdown()
+        TpuCollector.shutdown()
