@@ -1,4 +1,4 @@
-# Creates a Desktop shortcut for Finetuner with the logo icon.
+# Creates a Desktop shortcut for Inferna with the logo icon.
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 $Icon = Join-Path $Root "assets\icon.ico"
@@ -12,7 +12,7 @@ if (-not (Test-Path $Icon)) {
 }
 
 $Desktop = [Environment]::GetFolderPath("Desktop")
-$ShortcutPath = Join-Path $Desktop "Finetuner.lnk"
+$ShortcutPath = Join-Path $Desktop "Inferna.lnk"
 
 $Wsh = New-Object -ComObject WScript.Shell
 $Shortcut = $Wsh.CreateShortcut($ShortcutPath)
@@ -20,7 +20,7 @@ $Shortcut.TargetPath = $Pythonw
 $Shortcut.Arguments = "-m finetuner"
 $Shortcut.WorkingDirectory = $Root
 $Shortcut.IconLocation = "$Icon,0"
-$Shortcut.Description = "Finetuner GPU LLM Fine-tuning and Evaluation"
+$Shortcut.Description = "Inferna local LLM post-training workbench"
 $Shortcut.Save()
 
 Write-Host "Desktop shortcut created: $ShortcutPath" -ForegroundColor Green

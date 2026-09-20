@@ -74,7 +74,7 @@ def _stop_child(process: subprocess.Popen[bytes]) -> None:
 
 
 def run_reloader() -> int:
-    print("Finetuner reload: watching for file changes. Ctrl+C stops the app.", flush=True)
+    print("Inferna reload: watching for file changes. Ctrl+C stops the app.", flush=True)
     process = _start_child()
     previous = file_snapshot()
     try:
@@ -83,7 +83,7 @@ def run_reloader() -> int:
             if process.poll() is not None:
                 if process.returncode == 0:
                     return 0
-                print("Finetuner exited with an error; restarting.", flush=True)
+                print("Inferna exited with an error; restarting.", flush=True)
                 time.sleep(0.8)
                 process = _start_child()
                 previous = file_snapshot()
@@ -96,7 +96,7 @@ def run_reloader() -> int:
             previous = file_snapshot()
             names = ", ".join(Path(path).name for path in changed[:4])
             extra = f" (+{len(changed) - 4})" if len(changed) > 4 else ""
-            print(f"Reloading Finetuner ({names}{extra})", flush=True)
+            print(f"Reloading Inferna ({names}{extra})", flush=True)
             _stop_child(process)
             process = _start_child()
     except KeyboardInterrupt:

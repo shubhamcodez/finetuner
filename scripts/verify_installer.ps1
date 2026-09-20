@@ -38,17 +38,17 @@ if (-not $iscc) {
 }
 
 foreach ($arch in @("x64", "arm64")) {
-    $dir = Join-Path $Root "dist\Finetuner-$arch"
+    $dir = Join-Path $Root "dist\Inferna-$arch"
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    Set-Content -Path (Join-Path $dir "Finetuner.exe") -Value "stub"
+    Set-Content -Path (Join-Path $dir "Inferna.exe") -Value "stub"
 }
 
 $iss = Join-Path $Root "scripts\finetuner_installer.iss"
 foreach ($arch in @("x64", "arm64", "universal")) {
-    Write-Host "Compiling Finetuner-Setup-$arch.exe"
-    & $iscc "/DAppArch=$arch" "/DAppVersion=0.2.0" "/DDistFolder=..\dist\Finetuner-$arch" $iss
+    Write-Host "Compiling Inferna-Setup-$arch.exe"
+    & $iscc "/DAppArch=$arch" "/DAppVersion=0.2.0" "/DDistFolder=..\dist\Inferna-$arch" $iss
     if ($LASTEXITCODE -ne 0) { throw "ISCC failed for $arch" }
-    $setup = Join-Path $Root "dist\Finetuner-Setup-$arch.exe"
+    $setup = Join-Path $Root "dist\Inferna-Setup-$arch.exe"
     if (-not (Test-Path $setup)) { throw "Missing $setup" }
 }
 

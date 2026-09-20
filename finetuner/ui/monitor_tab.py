@@ -3,15 +3,14 @@ from __future__ import annotations
 from collections import deque
 
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QMargins, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
-    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -20,16 +19,22 @@ from finetuner.monitor.stats import StatsPoller, SystemStats
 from finetuner.ui.theme import Theme, chart_colors
 
 
-class MetricCard(QGroupBox):
+class MetricCard(QFrame):
     def __init__(self, title: str, parent=None) -> None:
-        super().__init__(title, parent)
+        super().__init__(parent)
+        self.setObjectName("SurfaceCard")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout = QVBoxLayout(self)
-        layout.setSpacing(2)
-        layout.setContentsMargins(6, 8, 6, 6)
+        layout.setSpacing(1)
+        layout.setContentsMargins(10, 8, 10, 8)
+        heading = QLabel(title)
+        heading.setObjectName("MetaLabel")
         self.value_label = QLabel("--")
         self.value_label.setObjectName("MetricValue")
         self.detail_label = QLabel("")
         self.detail_label.setObjectName("MetricDetail")
+        self.detail_label.setWordWrap(True)
+        layout.addWidget(heading)
         layout.addWidget(self.value_label)
         layout.addWidget(self.detail_label)
 
@@ -38,9 +43,11 @@ class MetricCard(QGroupBox):
         self.detail_label.setText(detail)
 
 
-class HistoryChart(QGroupBox):
+class HistoryChart(QFrame):
     def __init__(self, title: str, y_max: float = 100.0, parent=None) -> None:
-        super().__init__(title, parent)
+        super().__init__(parent)
+        self.setObjectName("SurfaceCard")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         colors = chart_colors()
         self._series = QLineSeries()
         self._history: deque[float] = deque(maxlen=60)
@@ -52,21 +59,26 @@ class HistoryChart(QGroupBox):
         chart.setBackgroundBrush(QColor(colors.get("background", Theme.SURFACE)))
         chart.setPlotAreaBackgroundVisible(True)
         chart.setPlotAreaBackgroundBrush(QColor(Theme.SURFACE_ALT))
+        chart.setBackgroundRoundness(0)
+        chart.setMargins(QMargins(0, 0, 4, 0))
+        chart.layout().setContentsMargins(0, 0, 0, 0)
+        chart.setAnimationOptions(QChart.AnimationOption.NoAnimation)
 
         axis_x = QValueAxis()
         axis_x.setRange(0, 60)
+        axis_x.setTickCount(7)
         axis_x.setLabelFormat("%d")
-        axis_x.setTitleText("Time (s)")
         axis_x.setLabelsColor(QColor(colors["label"]))
-        axis_x.setTitleBrush(QColor(colors["label"]))
         axis_x.setGridLineColor(QColor(colors["grid"]))
+        axis_x.setLineVisible(False)
 
         axis_y = QValueAxis()
         axis_y.setRange(0, y_max)
-        axis_y.setTitleText("Utilization %")
+        axis_y.setTickCount(5)
+        axis_y.setLabelFormat("%d")
         axis_y.setLabelsColor(QColor(colors["label"]))
-        axis_y.setTitleBrush(QColor(colors["label"]))
         axis_y.setGridLineColor(QColor(colors["grid"]))
+        axis_y.setLineVisible(False)
 
         chart.addAxis(axis_x, Qt.AlignmentFlag.AlignBottom)
         chart.addAxis(axis_y, Qt.AlignmentFlag.AlignLeft)
@@ -77,19 +89,38 @@ class HistoryChart(QGroupBox):
         pen.setWidthF(2.5)
         self._series.setPen(pen)
 
+        heading = QLabel(title)
+        heading.setObjectName("CardTitle")
         self._view = QChartView(chart)
-        self._view.setMinimumHeight(130)
+        self._view.setMinimumHeight(180)
+        self._view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._view.setRenderHint(QPainter.RenderHint.Antialiasing)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 6, 4, 4)
-        layout.setSpacing(0)
-        layout.addWidget(self._view)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(4)
+        layout.addWidget(heading)
+        layout.addWidget(self._view, 1)
+        self.setMinimumHeight(210)
 
     def append(self, value: float) -> None:
         self._history.append(value)
         self._series.clear()
         for i, v in enumerate(self._history):
             self._series.append(i, v)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        chart = self._view.chart()
+        if chart is not None:
+            chart.resize(self._view.size())
+            chart.setPlotArea(QRectF())
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        chart = self._view.chart()
+        if chart is not None:
+            chart.resize(self._view.size())
+            chart.setPlotArea(QRectF())
 
 
 class MonitorTab(QWidget):
@@ -100,27 +131,16 @@ class MonitorTab(QWidget):
         self._poller.stats_updated.connect(self._on_stats)
 
     def _build_ui(self) -> None:
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setSpacing(8)
-
-        intro = QLabel("Live CPU, RAM, GPU, NPU, and TPU metrics.")
-        intro.setObjectName("HintLabel")
-        layout.addWidget(intro)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
 
         health = QFrame()
         health.setObjectName("SurfaceCard")
-        health_layout = QVBoxLayout(health)
-        health_layout.setContentsMargins(20, 16, 20, 16)
-        health_layout.setSpacing(10)
+        health_layout = QHBoxLayout(health)
+        health_layout.setContentsMargins(14, 8, 14, 8)
+        health_layout.setSpacing(12)
         self.health_rows = {}
         for key, label in (
             ("compute", "Compute"),
@@ -129,15 +149,15 @@ class MonitorTab(QWidget):
             ("jobs", "Job scheduler"),
             ("services", "Local services"),
         ):
-            row = QHBoxLayout()
+            cell = QVBoxLayout()
+            cell.setSpacing(2)
             name = QLabel(label)
-            name.setObjectName("CardTitle")
+            name.setObjectName("MetaLabel")
             state = QLabel("Healthy")
-            state.setObjectName("MetaLabel")
-            row.addWidget(name)
-            row.addStretch()
-            row.addWidget(state)
-            health_layout.addLayout(row)
+            state.setObjectName("CardTitle")
+            cell.addWidget(name)
+            cell.addWidget(state)
+            health_layout.addLayout(cell, 1)
             self.health_rows[key] = state
         layout.addWidget(health)
 
@@ -153,16 +173,20 @@ class MonitorTab(QWidget):
         self.tpu_mem_card = MetricCard("TPU Memory")
         cards.addWidget(self.cpu_card, 0, 0)
         cards.addWidget(self.ram_card, 0, 1)
-        cards.addWidget(self.gpu_card, 1, 0)
-        cards.addWidget(self.vram_card, 1, 1)
-        cards.addWidget(self.npu_card, 2, 0)
-        cards.addWidget(self.npu_mem_card, 2, 1)
-        cards.addWidget(self.tpu_card, 3, 0)
-        cards.addWidget(self.tpu_mem_card, 3, 1)
+        cards.addWidget(self.gpu_card, 0, 2)
+        cards.addWidget(self.vram_card, 0, 3)
+        cards.addWidget(self.npu_card, 1, 0)
+        cards.addWidget(self.npu_mem_card, 1, 1)
+        cards.addWidget(self.tpu_card, 1, 2)
+        cards.addWidget(self.tpu_mem_card, 1, 3)
         layout.addLayout(cards)
 
         charts = QGridLayout()
         charts.setSpacing(8)
+        charts.setRowStretch(0, 1)
+        charts.setRowStretch(1, 1)
+        charts.setColumnStretch(0, 1)
+        charts.setColumnStretch(1, 1)
         self.cpu_chart = HistoryChart("CPU History", y_max=100)
         self.gpu_chart = HistoryChart("GPU History", y_max=100)
         self.npu_chart = HistoryChart("NPU History", y_max=100)
@@ -171,24 +195,23 @@ class MonitorTab(QWidget):
         charts.addWidget(self.gpu_chart, 0, 1)
         charts.addWidget(self.npu_chart, 1, 0)
         charts.addWidget(self.tpu_chart, 1, 1)
-        layout.addLayout(charts)
+        layout.addLayout(charts, 1)
 
+        status = QHBoxLayout()
+        status.setSpacing(16)
         self.gpu_status = QLabel("")
         self.gpu_status.setObjectName("MutedLabel")
         self.gpu_status.setWordWrap(True)
-        layout.addWidget(self.gpu_status)
         self.npu_status = QLabel("")
         self.npu_status.setObjectName("MutedLabel")
         self.npu_status.setWordWrap(True)
-        layout.addWidget(self.npu_status)
         self.tpu_status = QLabel("")
         self.tpu_status.setObjectName("MutedLabel")
         self.tpu_status.setWordWrap(True)
-        layout.addWidget(self.tpu_status)
-        layout.addStretch()
-
-        scroll.setWidget(content)
-        outer.addWidget(scroll)
+        status.addWidget(self.gpu_status, 1)
+        status.addWidget(self.npu_status, 1)
+        status.addWidget(self.tpu_status, 1)
+        layout.addLayout(status)
 
     def _on_stats(self, stats: SystemStats) -> None:
         self.cpu_card.set_value(f"{stats.cpu_percent:.1f}%")

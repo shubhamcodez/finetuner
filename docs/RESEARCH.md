@@ -1,7 +1,7 @@
 # Research rationale and public evidence
 
 This document distinguishes public evidence from inference. Frontier labs do not publish complete
-production recipes, data mixtures, reward systems, or infrastructure. Finetuner therefore exposes
+production recipes, data mixtures, reward systems, or infrastructure. Inferna therefore exposes
 method families and composable stages rather than advertising a guessed “OpenAI/xAI/Anthropic recipe.”
 
 ## Publicly described post-training patterns
@@ -98,7 +98,7 @@ Primary sources:
 
 ## Representation and activation analysis
 
-Finetuner extracts mean- or last-token hidden states from selected layers and provides:
+Inferna extracts mean- or last-token hidden states from selected layers and provides:
 
 - PCA for deterministic global variance structure
 - t-SNE for local-neighborhood exploration (never interpreted as faithful global geometry)

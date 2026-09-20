@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "finetuner"
 version = "0.2.0"
-description = "Local LLM post-training, distillation, evaluation, deployment, and inference optimization"
+description = "Inferna — local LLM post-training, distillation, evaluation, deployment, and inference optimization"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

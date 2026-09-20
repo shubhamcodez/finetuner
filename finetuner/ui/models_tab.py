@@ -148,7 +148,7 @@ class ModelsTab(QWidget):
 
         hint = QLabel(
             "Queued models are the input for training, evaluation, analysis, deployment, and inference. "
-            "After a model is on disk, Finetuner detects this device and asks whether to optimize before serving on port 1234."
+            "After a model is on disk, Inferna detects this device and asks whether to optimize before serving on port 1234."
         )
         hint.setObjectName("HintLabel")
         hint.setWordWrap(True)

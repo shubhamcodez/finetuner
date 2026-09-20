@@ -78,13 +78,14 @@ def bundled_assets_dir() -> Path:
 
 
 def logo_path() -> Path:
-    bundled = bundled_assets_dir() / "finetuner-logo.png"
-    if bundled.exists():
-        return bundled
-    dev_root = Path(__file__).resolve().parents[2] / "finetuner-logo.png"
-    if dev_root.exists():
-        return dev_root
-    return bundled
+    for name in ("inferna-logo.png", "finetuner-logo.png"):
+        bundled = bundled_assets_dir() / name
+        if bundled.exists():
+            return bundled
+        dev_root = Path(__file__).resolve().parents[2] / name
+        if dev_root.exists():
+            return dev_root
+    return bundled_assets_dir() / "inferna-logo.png"
 
 
 def icon_path() -> Path:

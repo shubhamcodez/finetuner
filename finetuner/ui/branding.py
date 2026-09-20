@@ -7,17 +7,20 @@ from PySide6.QtGui import QIcon, QPixmap
 
 from finetuner.core.paths import icon_path, logo_path
 
+PRODUCT_NAME = "Inferna"
+APP_USER_MODEL_ID = "Inferna.Inferna.1"
+
 _ICON_SIZES = (16, 20, 24, 32, 40, 48, 64, 128, 256)
 
 
 def configure_platform_app_id() -> None:
-    """Give Finetuner its own taskbar identity on Windows (not grouped under python.exe)."""
+    """Give Inferna its own taskbar identity on Windows (not grouped under python.exe)."""
     if sys.platform != "win32":
         return
     try:
         import ctypes
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Finetuner.Finetuner.1")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
     except Exception:
         pass
 

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from finetuner.ui.branding import logo_pixmap
+from finetuner.ui.branding import PRODUCT_NAME, logo_pixmap
 from finetuner.ui.icons import line_icon
 from finetuner.ui.theme import Token
 
@@ -85,10 +85,10 @@ class Sidebar(QFrame):
         brand = QHBoxLayout()
         brand.setSpacing(10)
         logo = QLabel()
-        pixmap = logo_pixmap(22)
+        pixmap = logo_pixmap(28)
         if pixmap is not None:
             logo.setPixmap(pixmap)
-        title = QLabel("Finetuner")
+        title = QLabel(PRODUCT_NAME)
         title.setObjectName("SidebarBrand")
         brand.addWidget(logo)
         brand.addWidget(title, 1)
@@ -139,8 +139,8 @@ class PageHeader(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
-        copy = QVBoxLayout()
-        copy.setSpacing(6)
+        self._copy = QVBoxLayout()
+        self._copy.setSpacing(6)
         self.eyebrow = QLabel()
         self.eyebrow.setObjectName("Eyebrow")
         self.title = QLabel()
@@ -149,10 +149,10 @@ class PageHeader(QWidget):
         self.subtitle = QLabel()
         self.subtitle.setObjectName("PageSubtitle")
         self.subtitle.setWordWrap(True)
-        copy.addWidget(self.eyebrow)
-        copy.addWidget(self.title)
-        copy.addWidget(self.subtitle)
-        layout.addLayout(copy, 1)
+        self._copy.addWidget(self.eyebrow)
+        self._copy.addWidget(self.title)
+        self._copy.addWidget(self.subtitle)
+        layout.addLayout(self._copy, 1)
         actions_wrap = QWidget()
         self.actions = QHBoxLayout(actions_wrap)
         self.actions.setContentsMargins(0, 0, 0, 0)
@@ -160,10 +160,14 @@ class PageHeader(QWidget):
         layout.addWidget(actions_wrap, 0, Qt.AlignmentFlag.AlignTop)
 
     def set_page(self, area: str) -> None:
-        eyebrow, title, subtitle = PAGE_COPY.get(area, ("FINETUNER", area.title(), ""))
+        eyebrow, title, subtitle = PAGE_COPY.get(area, ("INFERNA", area.title(), ""))
+        compact = area == "monitor"
         self.eyebrow.setText(eyebrow)
         self.title.setText(title)
         self.subtitle.setText(subtitle)
+        self.eyebrow.setVisible(not compact)
+        self.subtitle.setVisible(bool(subtitle) and not compact)
+        self._copy.setSpacing(2 if compact else 6)
 
 
 class WorkspaceBar(QFrame):
@@ -176,8 +180,6 @@ class WorkspaceBar(QFrame):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
         row.addStretch()
-        self.status = QLabel("Ready")
-        self.status.setObjectName("StatusBadge")
         search = QPushButton()
         search.setObjectName("IconButton")
         search.setToolTip("Command palette  Ctrl+K")
@@ -188,7 +190,6 @@ class WorkspaceBar(QFrame):
         help_btn.setToolTip("Documentation")
         help_btn.setIcon(line_icon("help", Token.TEXT_SECONDARY, 16))
         help_btn.clicked.connect(self.help_requested.emit)
-        row.addWidget(self.status)
         row.addWidget(search)
         row.addWidget(help_btn)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)

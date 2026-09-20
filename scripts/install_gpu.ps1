@@ -1,4 +1,4 @@
-# Finetuner dev setup with CUDA PyTorch (Windows + NVIDIA GPU)
+# Inferna dev setup with CUDA PyTorch (Windows + NVIDIA GPU)
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
@@ -15,7 +15,7 @@ Write-Host "Installing CUDA PyTorch (cu128)..." -ForegroundColor Cyan
 & $pip install --upgrade pip
 & $pip install torch==2.11.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
-Write-Host "Installing Finetuner dependencies..." -ForegroundColor Cyan
+Write-Host "Installing Inferna dependencies..." -ForegroundColor Cyan
 & $pip install -r requirements.txt
 & $pip install -e .
 

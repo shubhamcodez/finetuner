@@ -13,7 +13,8 @@ datas = []
 for source, dest in (
     (root / "assets" / "sample_sft.jsonl", "assets"),
     (root / "assets" / "datasets", "assets/datasets"),
-    (root / "assets" / "finetuner-logo.png", "assets"),
+    (root / "assets" / "inferna-logo.png", "assets"),
+    (root / "assets" / "inferna-icon.png", "assets"),
     (root / "assets" / "icon.ico", "assets"),
     (root / "assets" / "fonts", "assets/fonts"),
 ):
@@ -94,7 +95,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="Finetuner",
+    name="Inferna",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -116,5 +117,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="Finetuner",
+    name="Inferna",
 )

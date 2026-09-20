@@ -1,6 +1,6 @@
-# Finetuner user guide
+# Inferna user guide
 
-Finetuner is a local desktop workbench for post-training language models. Each job is an independent tool: train, distill, evaluate, analyze, quantize, or optimize inference. Tools share the model queue and, when needed, the dataset on **Data & Train**. They do not wait on each other.
+Inferna is a local desktop workbench for post-training language models. Each job is an independent tool: train, distill, evaluate, analyze, quantize, or optimize inference. Tools share the model queue and, when needed, the dataset on **Data & Train**. They do not wait on each other.
 
 This guide is for people using the app. For internals see [ARCHITECTURE.md](ARCHITECTURE.md). For method rationale see [RESEARCH.md](RESEARCH.md).
 
@@ -39,9 +39,9 @@ To pin a desktop shortcut after the venv exists:
 .\scripts\create_desktop_shortcut.ps1
 ```
 
-Use the Windows installer that matches this PC: `Finetuner-Setup-x64.exe` on Intel/AMD,
-`Finetuner-Setup-arm64.exe` on Snapdragon / ARM64, or `Finetuner-Setup-universal.exe` if you
-have the combined package. The installer is per-user by default (`%LOCALAPPDATA%\Programs\Finetuner`)
+Use the Windows installer that matches this PC: `Inferna-Setup-x64.exe` on Intel/AMD,
+`Inferna-Setup-arm64.exe` on Snapdragon / ARM64, or `Inferna-Setup-universal.exe` if you
+have the combined package. The installer is per-user by default (`%LOCALAPPDATA%\Programs\Inferna`)
 and does not require Administrator. To build it:
 
 ```powershell
@@ -74,7 +74,7 @@ Settings save automatically to `%LOCALAPPDATA%\.finetuner\config.json`. Hugging 
 ### Running a tool
 
 1. Open the tab for the tool you want, or use **Run** on a ready **Project** card.
-2. Fix any “Needs attention” items. Finetuner blocks a start until required fields are valid.
+2. Fix any “Needs attention” items. Inferna blocks a start until required fields are valid.
 3. Click **Run …** on the tab, **Start Run** in the console, or **Run** on the Project card.
 4. Watch the **Run Console**. Cancel stops the queue; it does not roll back a finished model.
 
@@ -95,8 +95,8 @@ Each completed tool writes a `manifest.json` with stage status, duration, metric
 
 This is the shortest path that exercises the product without a large download.
 
-1. Launch Finetuner. Two small instruct models are already queued: `Qwen/Qwen2.5-0.5B-Instruct` and `Qwen/Qwen2-0.5B-Instruct`.
-2. On **Models**, select one row and click **Download Selected**. Wait until **Local Path** is filled. Finetuner detects this device and asks **Optimize for your device?**
+1. Launch Inferna. Two small instruct models are already queued: `Qwen/Qwen2.5-0.5B-Instruct` and `Qwen/Qwen2-0.5B-Instruct`.
+2. On **Models**, select one row and click **Download Selected**. Wait until **Local Path** is filled. Inferna detects this device and asks **Optimize for your device?**
 3. Choose **Optimize and serve** or **Serve without optimizing**. The model is bound at `http://127.0.0.1:1234`.
 4. On **Data & Train**, pick **Bundled sample (smoke test)** or another preset and check **Use offline sample only**.
 5. Leave the method on **SFT**.
@@ -114,7 +114,7 @@ Queued models are the input for training, evaluation, analysis, deployment, and 
 - **Hugging Face** — a repo id such as `Qwen/Qwen2.5-0.5B-Instruct`. Download it here, or let a later run pull it.
 - **Local Path** — a Hugging Face checkpoint folder, a folder of `.gguf` / `.onnx` weights, or a single GGUF/ONNX file.
 
-After the weights are on disk, Finetuner detects this machine and asks whether to optimize before serving on port 1234. **Not now** only queues the model.
+After the weights are on disk, Inferna detects this machine and asks whether to optimize before serving on port 1234. **Not now** only queues the model.
 
 Give gated models a token on **Data & Train** (advanced settings) or set `HF_TOKEN` in the environment.
 

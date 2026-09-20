@@ -1,6 +1,6 @@
-# Finetuner
+# Inferna
 
-Finetuner is a local desktop workbench for reproducible LLM post-training. Training, preference
+Inferna is a local desktop workbench for reproducible LLM post-training. Training, preference
 optimization, knowledge distillation, evaluation, representation analysis, target-aware compression,
 and inference-engine optimization each run as their own tool.
 
@@ -20,7 +20,7 @@ notes live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/RESEARCH.md
   safety, arbitrary custom topics, or all data
 - GGUF, OpenVINO INT4/INT8, ONNX Runtime INT8, and AWQ deployment pipelines with an explicit
   backend/device compatibility matrix
-- Adaptive inference: after a model is loaded, Finetuner detects this device and asks whether to
+- Adaptive inference: after a model is loaded, Inferna detects this device and asks whether to
   optimize. Yes picks the strongest specialist (vLLM/llama.cpp CUDA, llama.cpp Vulkan/Metal/CPU,
   OpenVINO, or QNN/HTP) and then serves the model. No serves the artifact as-is. Either way the
   model is bound at http://127.0.0.1:1234. One-button NVIDIA / AMD / NPU overrides still exist.
@@ -30,7 +30,7 @@ notes live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/RESEARCH.md
   lineage
 - CPU, RAM, NVIDIA GPU, NPU, and TPU monitoring; Hugging Face/local model management; benchmark comparison
 
-Finetuner does not claim that one artifact runs optimally on every accelerator. Deployment is planned
+Inferna does not claim that one artifact runs optimally on every accelerator. Deployment is planned
 against a concrete runtime and device: GGUF for broad CPU/GPU support, OpenVINO for supported Intel
 CPU/GPU/NPU systems, ONNX Runtime INT8 for CPU, and AWQ for compatible NVIDIA inference stacks.
 Serving uses that specialist when you optimize, or a portable CPU recipe when you skip. The live
@@ -92,8 +92,8 @@ want to ship. Each run writes a native setup EXE and a portable zip.
 
 Outputs in `dist\`:
 
-- `Finetuner-Setup-x64.exe` or `Finetuner-Setup-arm64.exe` — Inno Setup installer
-- `Finetuner-windows-x64.zip` or `Finetuner-windows-arm64.zip` — portable folder
+- `Inferna-Setup-x64.exe` or `Inferna-Setup-arm64.exe` — Inno Setup installer
+- `Inferna-windows-x64.zip` or `Inferna-windows-arm64.zip` — portable folder
 
 x64 uses a CUDA PyTorch wheel when one is available, then falls back to CPU. ARM64 never
 installs CUDA. After both native folders exist, build a single picker:
@@ -102,6 +102,6 @@ installs CUDA. After both native folders exist, build a single picker:
 .\scripts\build_windows.ps1 -Universal
 ```
 
-That produces `Finetuner-Setup-universal.exe`, which installs the x64 payload on x64 Windows
+That produces `Inferna-Setup-universal.exe`, which installs the x64 payload on x64 Windows
 and the ARM64 payload on ARM64 Windows (Snapdragon X Elite, etc.). Inno Setup 6.3 or newer
 is required (`-InstallInno` will try to install it). 32-bit Windows is not supported.

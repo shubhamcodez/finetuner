@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QSplashScreen
 
-from finetuner.ui.branding import app_icon, configure_platform_app_id, logo_pixmap
+from finetuner.ui.branding import PRODUCT_NAME, app_icon, configure_platform_app_id, logo_pixmap
 from finetuner.ui.theme import Theme, apply_theme
 from finetuner.datasets.hf_datasets import load_env_file
 
@@ -23,8 +23,8 @@ def _make_splash() -> QSplashScreen:
         text_x = 40 + logo.width() + 16
 
     painter.setPen(QColor(Theme.TEXT))
-    painter.setFont(QFont(Theme.FONT_FAMILY, 22, QFont.Weight.Bold))
-    painter.drawText(text_x, 70, "Finetuner")
+    painter.setFont(QFont(Theme.FONT_FAMILY, 22))
+    painter.drawText(text_x, 70, PRODUCT_NAME)
     painter.setPen(QColor(Theme.TEXT_SECONDARY))
     painter.setFont(QFont(Theme.FONT_FAMILY, 11))
     painter.drawText(text_x, 98, "GPU LLM Fine-tuning Platform")
@@ -40,8 +40,8 @@ def _make_splash() -> QSplashScreen:
 def main() -> None:
     configure_platform_app_id()
     app = QApplication(sys.argv)
-    app.setApplicationName("Finetuner")
-    app.setOrganizationName("Finetuner")
+    app.setApplicationName(PRODUCT_NAME)
+    app.setOrganizationName(PRODUCT_NAME)
     app.setWindowIcon(app_icon())
     apply_theme(app)
     load_env_file()

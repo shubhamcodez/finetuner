@@ -23,7 +23,7 @@ from finetuner.core.config_store import load_config, save_config
 from finetuner.core.job import ModelRunResult, ProjectConfig
 from finetuner.core.preflight import collect_action_issues
 from finetuner.ui.analysis_tab import AnalysisTab
-from finetuner.ui.branding import app_icon
+from finetuner.ui.branding import PRODUCT_NAME, app_icon
 from finetuner.ui.command_palette import CommandPalette
 from finetuner.ui.deployment_tab import DeploymentTab
 from finetuner.ui.distillation_tab import DistillationTab
@@ -120,7 +120,7 @@ class ServeWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Finetuner")
+        self.setWindowTitle(PRODUCT_NAME)
         self.setWindowIcon(app_icon())
         self.resize(1440, 900)
         self.setMinimumSize(1100, 700)
@@ -178,9 +178,9 @@ class MainWindow(QMainWindow):
         row.addWidget(self.sidebar)
 
         workspace = QWidget()
-        workspace_layout = QVBoxLayout(workspace)
-        workspace_layout.setContentsMargins(32, 24, 32, 24)
-        workspace_layout.setSpacing(24)
+        self._workspace_layout = QVBoxLayout(workspace)
+        self._workspace_layout.setContentsMargins(32, 24, 32, 24)
+        self._workspace_layout.setSpacing(24)
         top = QHBoxLayout()
         self.page_header = PageHeader()
         top.addWidget(self.page_header, 1)
@@ -188,7 +188,7 @@ class MainWindow(QMainWindow):
         self.workspace_bar.command_requested.connect(self._open_palette)
         self.workspace_bar.help_requested.connect(lambda: self._navigate_to("docs"))
         top.addWidget(self.workspace_bar, 0)
-        workspace_layout.addLayout(top)
+        self._workspace_layout.addLayout(top)
 
         self.pages = QStackedWidget()
         seen: set[int] = set()
@@ -197,22 +197,8 @@ class MainWindow(QMainWindow):
                 continue
             seen.add(id(page))
             self.pages.addWidget(page)
-        workspace_layout.addWidget(self.pages, 1)
+        self._workspace_layout.addWidget(self.pages, 1)
         row.addWidget(workspace, 1)
-
-        self.run_btn = QPushButton("Start")
-        self.run_btn.setObjectName("PrimaryButton")
-        self.run_btn.clicked.connect(lambda: self._start_run())
-        self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setObjectName("GhostButton")
-        self.cancel_btn.setEnabled(False)
-        self.cancel_btn.clicked.connect(self._cancel_run)
-        self.logs_btn = QPushButton("Logs")
-        self.logs_btn.setObjectName("SecondaryButton")
-        self.logs_btn.clicked.connect(self._toggle_logs)
-        self.page_header.actions.addWidget(self.logs_btn)
-        self.page_header.actions.addWidget(self.cancel_btn)
-        self.page_header.actions.addWidget(self.run_btn)
 
         self._build_log_drawer()
         self.palette = CommandPalette(self)
@@ -252,10 +238,20 @@ class MainWindow(QMainWindow):
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(16, 16, 16, 16)
+        heading = QHBoxLayout()
         title = QLabel("Run details")
         title.setObjectName("SectionTitle")
-        layout.addWidget(title)
-        self.status_label = self.workspace_bar.status
+        self.status_label = QLabel("")
+        self.status_label.setObjectName("MutedLabel")
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setObjectName("GhostButton")
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.clicked.connect(self._cancel_run)
+        heading.addWidget(title)
+        heading.addStretch()
+        heading.addWidget(self.status_label)
+        heading.addWidget(self.cancel_btn)
+        layout.addLayout(heading)
         self.run_progress = QProgressBar()
         self.run_progress.setRange(0, 100)
         self.run_progress.setValue(0)
@@ -270,9 +266,6 @@ class MainWindow(QMainWindow):
         self.log_drawer.setWidget(panel)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.log_drawer)
         self.log_drawer.hide()
-
-    def _toggle_logs(self) -> None:
-        self.log_drawer.setVisible(not self.log_drawer.isVisible())
 
     def _open_palette(self) -> None:
         self.palette.open_palette()
@@ -293,6 +286,9 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentWidget(target)
         self.sidebar.select(area)
         self.page_header.set_page(area)
+        compact = area == "monitor"
+        self._workspace_layout.setContentsMargins(32, 8 if compact else 24, 32, 8 if compact else 24)
+        self._workspace_layout.setSpacing(8 if compact else 24)
         self._update_run_button()
 
     def _open_result_artifact(self, area: str, path: str) -> None:
@@ -306,16 +302,17 @@ class MainWindow(QMainWindow):
         return self._action_by_area.get(self._area)
 
     def _update_run_button(self, _index: int = 0) -> None:
-        action = self._current_action()
         running = bool(self._worker and self._worker.isRunning())
-        if action:
-            spec = get_action(action)
-            self.run_btn.setText(spec.title)
-            self.run_btn.setVisible(True)
-            self.run_btn.setEnabled(not running)
-        else:
-            self.run_btn.setVisible(False)
         self.cancel_btn.setEnabled(running)
+        for tab in (
+            self.training_tab,
+            self.distillation_tab,
+            self.evals_tab,
+            self.analysis_tab,
+            self.deployment_tab,
+            self.inference_tab,
+        ):
+            tab.run_bar.set_enabled(not running)
 
     def _on_evals_suggest(self, eval_ids: list[str]) -> None:
         self.evals_tab.apply_selection(eval_ids)
@@ -352,8 +349,6 @@ class MainWindow(QMainWindow):
         self.results_tab.set_results([])
         self.project_tab.clear_results()
         self.project_tab.set_running(True)
-        self.run_btn.setEnabled(False)
-        self.cancel_btn.setEnabled(True)
         self.status_label.setText("Running")
         self.log_drawer.show()
         self._append_log(f"Starting {spec.title.lower()}")
@@ -366,6 +361,7 @@ class MainWindow(QMainWindow):
         self._worker.stage_event.connect(self._on_stage_event)
         self._worker.finished_all.connect(self._on_finished)
         self._worker.start()
+        self._update_run_button()
 
     def _cancel_run(self) -> None:
         if self._worker:
@@ -458,7 +454,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(
             self,
             "Serve",
-            "Add or download a model first. Finetuner serves it on port 1234.",
+            "Add or download a model first. Inferna serves it on port 1234.",
         )
 
     def _start_serve(

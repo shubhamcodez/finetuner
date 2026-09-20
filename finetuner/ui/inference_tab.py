@@ -57,7 +57,7 @@ class InferenceTab(QWidget):
         self.run_bar.run_requested.connect(self._run_best)
         layout.addWidget(self.run_bar)
         intro = QLabel(
-            "Load a model and Finetuner detects this device, then asks whether to "
+            "Load a model and Inferna detects this device, then asks whether to "
             "optimize before serving at http://127.0.0.1:1234. "
             "One adaptive engine picks the strongest specialist: "
             "vLLM or llama.cpp CUDA on NVIDIA, llama.cpp on AMD/Apple/CPU, "

@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
 
 from finetuner.core.actions import ActionEvent
 from finetuner.core.job import ModelRunResult, ProjectConfig
-from finetuner.core.project_state import build_project_snapshot
 from finetuner.ui.icons import line_icon
 from finetuner.ui.theme import Token
 
@@ -28,13 +27,6 @@ _TOOLS = (
     ("analysis", "Analyze", "analysis", "Inspect representations and layer similarity."),
     ("deployment", "Deploy", "deployment", "Quantize for a concrete backend and device."),
     ("inference", "Optimize Inference", "inference", "Bind the strongest ready engine on port 1234."),
-)
-
-_STEPS = (
-    ("1", "Prepare data", "Choose a dataset and confirm the model queue."),
-    ("2", "Train model", "Run SFT or a preference method."),
-    ("3", "Evaluate", "Compare scores against the selected benchmarks."),
-    ("4", "Deploy", "Quantize, optimize, and serve."),
 )
 
 
@@ -95,42 +87,6 @@ class ProjectTab(QWidget):
         layout = QVBoxLayout(content)
         layout.setContentsMargins(0, 0, 0, 32)
         layout.setSpacing(24)
-
-        workflow = QFrame()
-        workflow.setObjectName("SurfaceCard")
-        steps = QHBoxLayout(workflow)
-        steps.setContentsMargins(20, 16, 20, 16)
-        steps.setSpacing(0)
-        snapshot = build_project_snapshot(self.config)
-        current = _current_step(snapshot)
-        for index, (number, title, body) in enumerate(_STEPS):
-            cell = QVBoxLayout()
-            cell.setSpacing(4)
-            top = QHBoxLayout()
-            badge = QLabel(number)
-            badge.setObjectName("StepNumber")
-            heading = QLabel(title)
-            heading.setObjectName("CardTitle")
-            top.addWidget(badge)
-            top.addWidget(heading, 1)
-            copy = QLabel(body)
-            copy.setObjectName("MetaLabel")
-            copy.setWordWrap(True)
-            cell.addLayout(top)
-            cell.addWidget(copy)
-            wrap = QFrame()
-            wrap.setObjectName("StepCard")
-            wrap.setProperty("current", index == current)
-            inner = QVBoxLayout(wrap)
-            inner.setContentsMargins(12, 10, 12, 10)
-            inner.addLayout(cell)
-            steps.addWidget(wrap, 1)
-            if index < len(_STEPS) - 1:
-                arrow = QLabel("→")
-                arrow.setObjectName("MetaLabel")
-                arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                steps.addWidget(arrow)
-        layout.addWidget(workflow)
 
         section = QLabel("Tools")
         section.setObjectName("SectionTitle")
@@ -223,15 +179,3 @@ class ProjectTab(QWidget):
             )
             for column, value in enumerate(values):
                 self.outputs.setItem(row, column, QTableWidgetItem(value))
-
-
-def _current_step(snapshot) -> int:
-    areas = {area.area_id: area for area in snapshot.areas}
-    if not areas.get("models") or not areas["models"].ready:
-        return 0
-    training = areas.get("training")
-    if training and not training.ready:
-        return 0
-    if training and training.ready:
-        return 1
-    return 0

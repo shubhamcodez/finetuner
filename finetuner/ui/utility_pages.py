@@ -23,7 +23,7 @@ class DocsPage(QWidget):
             (
                 "Load a model",
                 "Add a Hugging Face repo or a local GGUF/ONNX folder. When weights are on disk, "
-                "Finetuner detects this machine and asks whether to optimize before serving on port 1234.",
+                "Inferna detects this machine and asks whether to optimize before serving on port 1234.",
             ),
             (
                 "Run one tool at a time",

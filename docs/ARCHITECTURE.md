@@ -1,6 +1,6 @@
 # Architecture
 
-Finetuner separates product configuration from execution. Each tool has its own typed settings and
+Inferna separates product configuration from execution. Each tool has its own typed settings and
 can be run on its own. A run writes artifacts and an atomic manifest for that tool only.
 
 ```mermaid
@@ -35,7 +35,7 @@ inference optimization.
 - `eval_results`: structured benchmark results
 - `analysis`: `representations.json` with layer points, metrics, and CKA matrix
 - `deployment_model`: a target-specific compressed artifact directory
-- `inference_engine`: a validated serve/compile plan (`inference_plan.json`) plus an optional compiled engine and `device_bind` probe. Target `auto` is resolved at run time to the highest-ranked specialist that is present and artifact-ready. After load (or after optimize) Finetuner binds that recipe at `http://127.0.0.1:1234`. Skipping optimize uses a portable CPU recipe on the same port.
+- `inference_engine`: a validated serve/compile plan (`inference_plan.json`) plus an optional compiled engine and `device_bind` probe. Target `auto` is resolved at run time to the highest-ranked specialist that is present and artifact-ready. After load (or after optimize) Inferna binds that recipe at `http://127.0.0.1:1234`. Skipping optimize uses a portable CPU recipe on the same port.
 - `distillation_manifest`: teacher/data-generation provenance
 
 ## Reliability boundaries
@@ -51,5 +51,5 @@ inference optimization.
 - Run manifests are local provenance records, not a substitute for an external experiment tracker,
   artifact registry, access-control service, or audit-log sink.
 - Windows packaging is native-architecture only. `scripts/build_windows.ps1` freezes the host
-  (x64 or ARM64) with PyInstaller and compiles `Finetuner-Setup-<arch>.exe`. A universal installer
+  (x64 or ARM64) with PyInstaller and compiles `Inferna-Setup-<arch>.exe`. A universal installer
   is a picker over both payloads, not a cross-compiled binary. 32-bit Windows is rejected.

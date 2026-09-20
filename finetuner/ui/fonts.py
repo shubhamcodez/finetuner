@@ -24,7 +24,7 @@ def load_application_fonts() -> str:
         families = QFontDatabase.applicationFontFamilies(font_id)
         if families:
             return families[0]
-    installed = set(QFontDatabase().families())
+    installed = set(QFontDatabase.families())
     for candidate in ("Inter", "Geist", "SF Pro Text", "Segoe UI Variable Text", "Segoe UI"):
         if candidate in installed:
             return candidate
@@ -32,11 +32,11 @@ def load_application_fonts() -> str:
 
 
 def _family_has_weight(family: str, weight: QFont.Weight) -> bool:
-    styles = QFontDatabase().styles(family)
+    styles = QFontDatabase.styles(family)
     if not styles:
         return weight == QFont.Weight.Normal
     wanted = int(weight)
-    return any(int(QFontDatabase().weight(family, style)) == wanted for style in styles)
+    return any(int(QFontDatabase.weight(family, style)) == wanted for style in styles)
 
 
 def _apply_variable_weight(font: QFont, weight: QFont.Weight) -> None:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 from finetuner.core.job import ModelRunResult, ProjectConfig
 from finetuner.monitor.stats import SystemStats
@@ -50,6 +50,9 @@ def test_project_overview_lists_independent_tools(app):
         "deployment",
         "inference",
     }
+    labels = [child.text() for child in project.findChildren(QLabel)]
+    assert "Prepare data" not in labels
+    assert "→" not in labels
     assert "independently" in training.run_bar.label.text().lower()
     assert training.dataset_group.isHidden()
 
@@ -108,4 +111,6 @@ def test_system_tab_renders_npu_stats(app):
     assert "0.7" in tab.npu_mem_card.value_label.text()
     assert "18" in tab.tpu_card.value_label.text()
     assert "Coral" in tab.tpu_card.detail_label.text()
+    assert tab.cpu_chart._view.minimumHeight() >= 180
+    assert tab.npu_chart._view.minimumHeight() >= 180
     tab.shutdown()

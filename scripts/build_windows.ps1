@@ -1,6 +1,6 @@
 # Build a native Windows installer for this machine's architecture (x64 or ARM64).
-# A universal installer is produced only when both dist\Finetuner-x64 and
-# dist\Finetuner-arm64 already exist (build each arch on a matching PC).
+# A universal installer is produced only when both dist\Inferna-x64 and
+# dist\Inferna-arm64 already exist (build each arch on a matching PC).
 
 param(
     [ValidateSet("auto", "x64", "arm64", "universal")]
@@ -75,14 +75,14 @@ $hostArch = Get-NativeArch
 if ($Arch -eq "auto") { $Arch = $hostArch }
 
 $Version = Get-AppVersion
-Write-Host "=== Finetuner Windows package ===" -ForegroundColor Cyan
+Write-Host "=== Inferna Windows package ===" -ForegroundColor Cyan
 Write-Host "Host: $hostArch   Target: $Arch   Version: $Version"
 
 if ($Arch -eq "universal") {
     foreach ($needed in @("x64", "arm64")) {
-        $folder = Join-Path $Root "dist\Finetuner-$needed"
-        if (-not (Test-Path (Join-Path $folder "Finetuner.exe"))) {
-            throw "Universal installer needs dist\Finetuner-$needed\Finetuner.exe. Build that arch on a matching PC first."
+        $folder = Join-Path $Root "dist\Inferna-$needed"
+        if (-not (Test-Path (Join-Path $folder "Inferna.exe"))) {
+            throw "Universal installer needs dist\Inferna-$needed\Inferna.exe. Build that arch on a matching PC first."
         }
     }
 } else {
@@ -141,15 +141,15 @@ if ($Arch -eq "universal") {
     Write-Host "Running PyInstaller ($Arch)..."
     Invoke-Native $venvPython @("-m", "PyInstaller", "finetuner.spec", "--noconfirm")
 
-    $collected = Join-Path $Root "dist\Finetuner"
-    $distDir = Join-Path $Root "dist\Finetuner-$Arch"
-    if (-not (Test-Path (Join-Path $collected "Finetuner.exe"))) {
-        throw "Build failed: dist\Finetuner\Finetuner.exe not found"
+    $collected = Join-Path $Root "dist\Inferna"
+    $distDir = Join-Path $Root "dist\Inferna-$Arch"
+    if (-not (Test-Path (Join-Path $collected "Inferna.exe"))) {
+        throw "Build failed: dist\Inferna\Inferna.exe not found"
     }
     if (Test-Path $distDir) { Remove-Item $distDir -Recurse -Force }
     Move-Item $collected $distDir
 
-    $zipPath = Join-Path $Root "dist\Finetuner-windows-$Arch.zip"
+    $zipPath = Join-Path $Root "dist\Inferna-windows-$Arch.zip"
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
     Compress-Archive -Path (Join-Path $distDir "*") -DestinationPath $zipPath -Force
     Write-Host "Portable zip: $zipPath" -ForegroundColor Green
@@ -169,13 +169,13 @@ if (-not $iscc -and $InstallInno) {
 if (-not $iscc) {
     Write-Host "Inno Setup 6.3+ not found. Install from https://jrsoftware.org/isinfo.php or rerun with -InstallInno." -ForegroundColor Yellow
     if ($Arch -ne "universal") {
-        Write-Host "Portable zip is ready at dist\Finetuner-windows-$Arch.zip"
+        Write-Host "Portable zip is ready at dist\Inferna-windows-$Arch.zip"
     }
     exit 0
 }
 
 $issPath = Join-Path $Root "scripts\finetuner_installer.iss"
-$distDefine = "..\dist\Finetuner-$Arch"
+$distDefine = "..\dist\Inferna-$Arch"
 Write-Host "Compiling installer ($Arch) with $iscc"
 Invoke-Native $iscc @(
     "/DAppArch=$Arch",
@@ -184,7 +184,7 @@ Invoke-Native $iscc @(
     $issPath
 )
 
-$setup = Join-Path $Root "dist\Finetuner-Setup-$Arch.exe"
+$setup = Join-Path $Root "dist\Inferna-Setup-$Arch.exe"
 if (-not (Test-Path $setup)) {
     throw "ISCC finished but $setup was not created"
 }
