@@ -315,6 +315,43 @@ QComboBox::down-arrow {{
     border-right: 5px solid transparent;
     border-top: 6px solid {t.TEXT_SECONDARY};
 }}
+#TrendingSelect {{
+    background-color: {t.INPUT};
+    border: 1px solid {t.BORDER_INPUT};
+    border-radius: {t.RADIUS_INPUT};
+    min-height: 40px;
+    padding: 0 12px;
+}}
+#TrendingSelect:hover {{
+    border-color: {t.BORDER};
+}}
+#TrendingSelectLabel {{
+    background: transparent;
+    color: {t.TEXT_TERTIARY};
+    font-size: 14px;
+    font-weight: 400;
+}}
+#TrendingSelectLabel[filled="true"] {{
+    color: {t.TEXT};
+}}
+#TrendingPopup {{
+    background-color: {t.SURFACE};
+    border: 1px solid {t.BORDER};
+    border-radius: {t.RADIUS_CARD};
+}}
+#TrendingPopup QListWidget {{
+    background: transparent;
+    border: none;
+}}
+#TrendingPopup QListWidget::item {{
+    padding: 8px 12px;
+    color: {t.TEXT};
+}}
+#TrendingPopup QListWidget::item:hover,
+#TrendingPopup QListWidget::item:selected {{
+    background-color: {t.ACCENT_SUBTLE};
+    color: {t.TEXT};
+}}
 QComboBox QAbstractItemView {{
     background-color: {t.SURFACE};
     color: {t.TEXT};

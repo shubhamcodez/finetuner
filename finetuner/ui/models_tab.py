@@ -2,22 +2,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import QPoint, Qt, QThread, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -27,6 +32,8 @@ from PySide6.QtWidgets import (
 from finetuner.core.download_worker import DownloadWorker
 from finetuner.core.hf_trending import FEATURED_MODELS, HubModel, fetch_trending_models
 from finetuner.core.job import ModelJob, ModelSource, ProjectConfig
+from finetuner.ui.icons import line_icon
+from finetuner.ui.theme import Token
 
 
 class _TrendingWorker(QThread):
@@ -38,6 +45,97 @@ class _TrendingWorker(QThread):
 
     def run(self) -> None:
         self.ready.emit(fetch_trending_models(token=self._token))
+
+
+class TrendingModelSelect(QFrame):
+    """Rounded select that starts empty and lists trending Hub models."""
+
+    model_chosen = Signal(object)
+    _PLACEHOLDER = "Select a trending model"
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("TrendingSelect")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setMinimumHeight(40)
+        self._models: list[HubModel] = []
+        self._selected: HubModel | None = None
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(4, 0, 4, 0)
+        row.setSpacing(8)
+        self.caption = QLabel(self._PLACEHOLDER)
+        self.caption.setObjectName("TrendingSelectLabel")
+        self.caption.setProperty("filled", False)
+        caption_font = QFont(self.caption.font())
+        caption_font.setWeight(QFont.Weight.Normal)
+        caption_font.setStyleStrategy(QFont.StyleStrategy.PreferNoHinting)
+        self.caption.setFont(caption_font)
+        chevron = QLabel()
+        chevron.setPixmap(line_icon("chevron-down", Token.TEXT_TERTIARY, 16).pixmap(16, 16))
+        row.addWidget(self.caption, 1)
+        row.addWidget(chevron, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        self._popup = QFrame(None, Qt.WindowType.Popup)
+        self._popup.setObjectName("TrendingPopup")
+        self._popup.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        pop = QVBoxLayout(self._popup)
+        pop.setContentsMargins(4, 4, 4, 4)
+        self._list = QListWidget()
+        self._list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._list.itemClicked.connect(self._pick)
+        pop.addWidget(self._list)
+
+    def set_models(self, models: list[HubModel] | tuple[HubModel, ...]) -> None:
+        current = self._selected.repo_id if self._selected else ""
+        self._models = list(models)
+        self._list.clear()
+        for model in self._models:
+            item = QListWidgetItem(f"{model.name}    {model.repo_id}")
+            item.setData(Qt.ItemDataRole.UserRole, model)
+            self._list.addItem(item)
+        if current:
+            match = next((model for model in self._models if model.repo_id == current), None)
+            if match is not None:
+                self._apply(match, emit=False)
+
+    def selected(self) -> HubModel | None:
+        return self._selected
+
+    def choose_index(self, index: int) -> None:
+        if 0 <= index < len(self._models):
+            self._apply(self._models[index])
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
+            self._open()
+        super().mousePressEvent(event)
+
+    def _open(self) -> None:
+        if self._list.count() == 0:
+            return
+        width = max(self.width(), 360)
+        self._popup.resize(width, min(320, 36 * self._list.count() + 12))
+        self._popup.move(self.mapToGlobal(QPoint(0, self.height() + 4)))
+        self._popup.show()
+
+    def _pick(self, item: QListWidgetItem) -> None:
+        model = item.data(Qt.ItemDataRole.UserRole)
+        self._popup.hide()
+        if isinstance(model, HubModel):
+            self._apply(model)
+
+    def _apply(self, model: HubModel, emit: bool = True) -> None:
+        self._selected = model
+        self.caption.setText(f"{model.name}  {model.repo_id}")
+        self.caption.setProperty("filled", True)
+        self.caption.style().unpolish(self.caption)
+        self.caption.style().polish(self.caption)
+        if emit:
+            self.model_chosen.emit(model)
 
 
 def validate_local_model(path: Path) -> tuple[bool, str]:
@@ -59,13 +157,9 @@ class AddModelDialog(QDialog):
         self.source_combo.addItems(["Hugging Face", "Local Path"])
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
 
-        self.name_combo = QComboBox()
-        self.name_combo.setEditable(False)
+        self.name_combo = TrendingModelSelect()
         self.name_combo.setMinimumWidth(320)
-        self.name_combo.setMaxVisibleItems(16)
-        self.name_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.name_combo.setMinimumContentsLength(28)
-        self.name_combo.currentIndexChanged.connect(self._on_name_chosen)
+        self.name_combo.model_chosen.connect(self._on_hub_model)
 
         self.identifier_edit = QLineEdit()
         self.identifier_edit.setPlaceholderText("org/model")
@@ -96,33 +190,18 @@ class AddModelDialog(QDialog):
         self._start_trending_fetch(token)
 
     def _fill_names(self, models: list[HubModel] | tuple[HubModel, ...]) -> None:
-        previous = self.name_combo.currentData()
-        self.name_combo.blockSignals(True)
-        self.name_combo.clear()
-        self.name_combo.addItem("Select a trending model…", "")
-        for model in models:
-            self.name_combo.addItem(f"{model.name}  ·  {model.repo_id}", model.repo_id)
-        index = self.name_combo.findData(previous) if previous else 0
-        if index < 0:
-            index = 0
-        self.name_combo.setCurrentIndex(index)
-        self.name_combo.blockSignals(False)
-        if index == 0 and self.source_combo.currentIndex() == 0:
+        self.name_combo.set_models(models)
+        if self.name_combo.selected() is None and self.source_combo.currentIndex() == 0:
             self.identifier_edit.clear()
-        elif index > 0:
-            self._on_name_chosen(index)
 
     def _start_trending_fetch(self, token: str) -> None:
         self._trending_worker = _TrendingWorker(token, self)
         self._trending_worker.ready.connect(self._fill_names)
         self._trending_worker.start()
 
-    def _on_name_chosen(self, index: int) -> None:
-        if self.source_combo.currentIndex() != 0:
-            return
-        repo_id = str(self.name_combo.itemData(index) or "")
-        if repo_id:
-            self.identifier_edit.setText(repo_id)
+    def _on_hub_model(self, model: HubModel) -> None:
+        if self.source_combo.currentIndex() == 0:
+            self.identifier_edit.setText(model.repo_id)
 
     def _on_source_changed(self, index: int) -> None:
         is_local = index == 1
@@ -133,8 +212,9 @@ class AddModelDialog(QDialog):
             self.identifier_edit.setPlaceholderText("C:\\models\\my-model or model.gguf")
         else:
             self.identifier_edit.setPlaceholderText("org/model or pick a name above")
-            if self.name_combo.currentIndex() > 0:
-                self._on_name_chosen(self.name_combo.currentIndex())
+            chosen = self.name_combo.selected()
+            if chosen is not None:
+                self._on_hub_model(chosen)
 
     def _browse(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select Model Folder")
@@ -150,14 +230,11 @@ class AddModelDialog(QDialog):
 
     def validate_and_accept(self) -> None:
         identifier = self.identifier_edit.text().strip()
-        typed = self.name_combo.currentText().strip()
-        if typed.startswith("Select"):
-            typed = ""
+        chosen = self.name_combo.selected()
+        typed = chosen.name if chosen else ""
         is_local = self.source_combo.currentIndex() == 1
-        if not is_local and "/" in typed:
-            identifier = typed
-        if not is_local and not identifier:
-            identifier = str(self.name_combo.currentData() or "")
+        if not is_local and chosen is not None:
+            identifier = chosen.repo_id or identifier
         if not identifier:
             QMessageBox.warning(self, "Validation", "Enter a model ID or path.")
             return

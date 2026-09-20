@@ -29,6 +29,7 @@ _PHOSPHOR = {
     "search": "ph.magnifying-glass",
     "help": "ph.question",
     "chevron": "ph.caret-right",
+    "chevron-down": "ph.caret-down",
 }
 
 

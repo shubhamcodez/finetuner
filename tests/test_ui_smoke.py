@@ -90,14 +90,14 @@ def test_distillation_selectors_include_downloaded_models(app, monkeypatch, tmp_
 def test_add_model_dialog_lists_huggingface_choices(app, monkeypatch):
     monkeypatch.setattr("finetuner.ui.models_tab.AddModelDialog._start_trending_fetch", lambda self, token="": None)
     dialog = AddModelDialog()
-    labels = [dialog.name_combo.itemText(i) for i in range(dialog.name_combo.count())]
-    assert dialog.name_combo.currentIndex() == 0
-    assert not dialog.name_combo.isEditable()
-    assert labels[0].startswith("Select")
+    picker = dialog.name_combo
+    labels = [f"{model.name} {model.repo_id}" for model in picker._models]
+    assert picker.selected() is None
+    assert picker.caption.text() == "Select a trending model"
     assert dialog.identifier_edit.text() == ""
-    assert dialog.name_combo.count() > 4
+    assert len(picker._models) > 4
     assert any("Qwen" in label or "qwen" in label.lower() for label in labels)
-    dialog.name_combo.setCurrentIndex(1)
+    picker.choose_index(0)
     assert "/" in dialog.identifier_edit.text()
     dialog.close()
 
