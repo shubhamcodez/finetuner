@@ -89,19 +89,13 @@ def test_distillation_selectors_include_downloaded_models(app, monkeypatch, tmp_
 
 @pytest.mark.ui
 def test_add_model_dialog_lists_huggingface_choices(app, monkeypatch):
-    monkeypatch.setattr(
-        "finetuner.ui.models_tab.fetch_trending_models",
-        lambda token="": list(FEATURED_MODELS),
-    )
+    monkeypatch.setattr("finetuner.ui.models_tab.AddModelDialog._start_trending_fetch", lambda self, token="": None)
     dialog = AddModelDialog()
-    labels = [dialog.trending_combo.itemText(i) for i in range(dialog.trending_combo.count())]
-    assert not dialog.trending_combo.isHidden()
-    assert labels[0].startswith("Custom")
-    assert any("Qwen" in label for label in labels)
-    dialog.trending_combo.setCurrentIndex(1)
+    labels = [dialog.name_combo.itemText(i) for i in range(dialog.name_combo.count())]
+    assert dialog.name_combo.isEditable()
+    assert any("Qwen" in label or "qwen" in label.lower() for label in labels)
+    dialog.name_combo.setCurrentIndex(0)
     assert "/" in dialog.identifier_edit.text()
-    dialog.source_combo.setCurrentIndex(1)
-    assert dialog.trending_combo.isHidden()
     dialog.close()
 
 
