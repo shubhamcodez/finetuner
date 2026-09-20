@@ -49,21 +49,29 @@ def validate_local_model(path: Path) -> tuple[bool, str]:
 
 
 class AddModelDialog(QDialog):
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, token: str = "") -> None:
         super().__init__(parent)
         self.setWindowTitle("Add Model")
-        self.setMinimumWidth(420)
+        self.setMinimumWidth(480)
+        self._name_touched = False
+        self._trending_worker: _TrendingWorker | None = None
 
         layout = QFormLayout(self)
         self.source_combo = QComboBox()
         self.source_combo.addItems(["Hugging Face", "Local Path"])
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
 
+        self.trending_combo = QComboBox()
+        self.trending_combo.setMinimumWidth(320)
+        self.trending_combo.currentIndexChanged.connect(self._on_trending_chosen)
+
         self.identifier_edit = QLineEdit()
         self.identifier_edit.setPlaceholderText(DEFAULT_MODEL_ID)
+        self.identifier_edit.textEdited.connect(self._on_identifier_typed)
 
         self.name_edit = QLineEdit()
         self.name_edit.setPlaceholderText("Display name (optional)")
+        self.name_edit.textEdited.connect(lambda _text: setattr(self, "_name_touched", True))
 
         self.browse_btn = QPushButton("Folder...")
         self.browse_btn.clicked.connect(self._browse)
@@ -75,6 +83,7 @@ class AddModelDialog(QDialog):
         id_row.addWidget(self.browse_file_btn)
 
         layout.addRow("Source", self.source_combo)
+        layout.addRow("Trending", self.trending_combo)
         layout.addRow("Identifier / Path", id_row)
         layout.addRow("Name", self.name_edit)
 
@@ -85,17 +94,68 @@ class AddModelDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addRow(buttons)
 
+        self._fill_trending(FEATURED_MODELS)
         self._on_source_changed(0)
         self._result: ModelJob | None = None
+        self._start_trending_fetch(token)
+
+    def _fill_trending(self, models: list[HubModel] | tuple[HubModel, ...]) -> None:
+        previous_index = self.trending_combo.currentIndex()
+        previous_id = self.trending_combo.currentData()
+        already_shown = self.trending_combo.count() > 0
+        self.trending_combo.blockSignals(True)
+        self.trending_combo.clear()
+        self.trending_combo.addItem("Custom repo id…", "")
+        for model in models:
+            self.trending_combo.addItem(f"{model.name}  ·  {model.repo_id}", model.repo_id)
+        if not already_shown:
+            index = 1 if self.trending_combo.count() > 1 else 0
+        elif previous_index == 0:
+            index = 0
+        else:
+            index = self.trending_combo.findData(previous_id)
+            if index < 0:
+                index = 0
+        self.trending_combo.setCurrentIndex(index)
+        self.trending_combo.blockSignals(False)
+        if index > 0:
+            self._on_trending_chosen(index)
+
+    def _start_trending_fetch(self, token: str) -> None:
+        self._trending_worker = _TrendingWorker(token, self)
+        self._trending_worker.ready.connect(self._fill_trending)
+        self._trending_worker.start()
+
+    def _on_trending_chosen(self, index: int) -> None:
+        repo_id = str(self.trending_combo.itemData(index) or "")
+        if not repo_id:
+            return
+        self.identifier_edit.setText(repo_id)
+        if not self._name_touched:
+            self.name_edit.setText(self.trending_combo.currentText().split("  ·  ", 1)[0])
+
+    def _on_identifier_typed(self, text: str) -> None:
+        index = self.trending_combo.findData(text.strip())
+        self.trending_combo.blockSignals(True)
+        self.trending_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.trending_combo.blockSignals(False)
 
     def _on_source_changed(self, index: int) -> None:
         is_local = index == 1
         self.browse_btn.setVisible(is_local)
         self.browse_file_btn.setVisible(is_local)
+        self.trending_combo.setVisible(not is_local)
+        form = self.layout()
+        if isinstance(form, QFormLayout):
+            label = form.labelForField(self.trending_combo)
+            if label is not None:
+                label.setVisible(not is_local)
         if is_local:
             self.identifier_edit.setPlaceholderText("C:\\models\\my-model or model.gguf")
         else:
             self.identifier_edit.setPlaceholderText(DEFAULT_MODEL_ID)
+            if self.trending_combo.currentIndex() > 0 and not self.identifier_edit.text().strip():
+                self._on_trending_chosen(self.trending_combo.currentIndex())
 
     def _browse(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select Model Folder")
@@ -231,7 +291,7 @@ class ModelsTab(QWidget):
             self.table.setItem(row, 3, item)
 
     def _add_model(self) -> None:
-        dialog = AddModelDialog(self)
+        dialog = AddModelDialog(self, token=self.config.hf_token)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         model = dialog.get_model()

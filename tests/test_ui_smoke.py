@@ -3,12 +3,14 @@ from __future__ import annotations
 import pytest
 from PySide6.QtWidgets import QApplication, QLabel
 
+from finetuner.core.hf_trending import FEATURED_MODELS
 from finetuner.core.job import ModelRunResult, ProjectConfig
 from finetuner.monitor.stats import SystemStats
 from finetuner.ui.analysis_tab import AnalysisTab
 from finetuner.ui.deployment_tab import DeploymentTab
 from finetuner.ui.distillation_tab import DistillationTab
 from finetuner.ui.inference_tab import InferenceTab
+from finetuner.ui.models_tab import AddModelDialog
 from finetuner.ui.monitor_tab import MonitorTab
 from finetuner.ui.project_tab import ProjectTab
 from finetuner.ui.results_tab import ResultsTab
@@ -83,6 +85,24 @@ def test_distillation_selectors_include_downloaded_models(app, monkeypatch, tmp_
 
     tab.teacher.setCurrentIndex(teacher_index)
     assert config.distillation.teacher_model == str(model_path)
+
+
+@pytest.mark.ui
+def test_add_model_dialog_lists_huggingface_choices(app, monkeypatch):
+    monkeypatch.setattr(
+        "finetuner.ui.models_tab.fetch_trending_models",
+        lambda token="": list(FEATURED_MODELS),
+    )
+    dialog = AddModelDialog()
+    labels = [dialog.trending_combo.itemText(i) for i in range(dialog.trending_combo.count())]
+    assert not dialog.trending_combo.isHidden()
+    assert labels[0].startswith("Custom")
+    assert any("Qwen" in label for label in labels)
+    dialog.trending_combo.setCurrentIndex(1)
+    assert "/" in dialog.identifier_edit.text()
+    dialog.source_combo.setCurrentIndex(1)
+    assert dialog.trending_combo.isHidden()
+    dialog.close()
 
 
 @pytest.mark.ui

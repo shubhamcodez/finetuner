@@ -111,7 +111,7 @@ Queued models are the input for training, evaluation, analysis, deployment, and 
 
 **Add Model** accepts:
 
-- **Hugging Face** — a repo id such as `Qwen/Qwen2.5-0.5B-Instruct`. Download it here, or let a later run pull it.
+- **Hugging Face** — pick a trending text-generation model, or type any repo id such as `Qwen/Qwen2.5-0.5B-Instruct`. Download it here, or let a later run pull it.
 - **Local Path** — a Hugging Face checkpoint folder, a folder of `.gguf` / `.onnx` weights, or a single GGUF/ONNX file.
 
 After the weights are on disk, Inferna detects this machine and asks whether to optimize before serving on port 1234. **Not now** only queues the model.

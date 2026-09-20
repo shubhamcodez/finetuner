@@ -59,13 +59,12 @@ def fetch_trending_models(
 ) -> list[HubModel]:
     """Return live trending text-generation models, or featured models if the Hub is down."""
     collected: list[HubModel] = []
-    errors: list[BaseException] = []
 
     def work() -> None:
         try:
             collected.extend(_query_hub(limit, token))
-        except Exception as exc:
-            errors.append(exc)
+        except Exception:
+            return
 
     worker = threading.Thread(target=work, daemon=True)
     worker.start()
