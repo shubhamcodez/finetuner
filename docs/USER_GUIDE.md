@@ -131,11 +131,12 @@ Choose one source. A custom path or Hugging Face id clears the preset.
 | Source | When to use |
 |---|---|
 | Ready-made preset | Fast start aligned with a benchmark |
-| Offline sample only | No network; small bundled JSONL |
+| Hugging Face trending | Current text-generation / conversational datasets from the Hub |
+| Offline sample only | No network; small bundled JSONL (eval presets only) |
 | Local JSONL/JSON | Your own data |
 | Hugging Face dataset id | A public or gated dataset, e.g. `tatsu-lab/alpaca` |
 
-Presets:
+Eval-aligned presets:
 
 | Preset | Pairs with eval | Notes |
 |---|---|---|
@@ -145,7 +146,9 @@ Presets:
 | ARC Challenge (Science) | ARC Challenge | Science exam questions |
 | Bundled sample | GSM8K | Tiny mix for smoke tests |
 
-**Auto-enable matching eval** adds the paired benchmark to **Evaluation** when you pick a preset.
+The dataset list also includes current Hugging Face trending finetune sets (Alpaca, Dolly, UltraChat, SmolTalk, and whatever is trending now). Those load from the Hub and do not have an offline sample.
+
+**Auto-enable matching eval** adds the paired benchmark to **Evaluation** when you pick an eval-aligned preset.
 
 ### Dataset formats
 

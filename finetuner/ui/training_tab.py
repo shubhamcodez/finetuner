@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import QThread, QTimer, Signal, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -21,10 +21,22 @@ from PySide6.QtWidgets import (
 
 from finetuner.core.job import ProjectConfig
 from finetuner.datasets.presets import DATASET_PRESETS, get_preset
+from finetuner.datasets.trending import FEATURED_DATASETS, HubDataset, fetch_trending_datasets, hub_preset_id
 from finetuner.eval.tasks import EVAL_TASKS
 from finetuner.training.methods import TRAINING_METHODS
 from finetuner.training.rewards import REWARD_FUNCTIONS
 from finetuner.ui.tool_run import ToolRunBar
+
+
+class _DatasetTrendingWorker(QThread):
+    ready = Signal(object)
+
+    def __init__(self, token: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self._token = token
+
+    def run(self) -> None:
+        self.ready.emit(fetch_trending_datasets(token=self._token))
 
 
 class TrainingTab(QWidget):
@@ -36,8 +48,10 @@ class TrainingTab(QWidget):
         super().__init__(parent)
         self.config = config
         self._block_sync = False
+        self._trending_worker: _DatasetTrendingWorker | None = None
         self._build_ui()
         self._load_from_config()
+        QTimer.singleShot(0, self._start_trending_fetch)
 
     def _build_ui(self) -> None:
         outer = QVBoxLayout(self)
@@ -56,30 +70,20 @@ class TrainingTab(QWidget):
         self.run_bar.run_requested.connect(self.run_requested.emit)
         layout.addWidget(self.run_bar)
 
-        preset_group = QGroupBox("Ready-made Datasets")
+        preset_group = QGroupBox("Datasets")
         preset_layout = QVBoxLayout(preset_group)
         preset_layout.setSpacing(4)
 
         preset_group.setToolTip(
-            "Pick a Hugging Face preset aligned with an evaluation, or use its offline sample."
+            "Eval-aligned presets plus current Hugging Face trending datasets for finetuning."
         )
 
         preset_row = QHBoxLayout()
         preset_row.setSpacing(6)
         self.preset_combo = QComboBox()
-        self.preset_combo.addItem("Select preset…", "")
-        for preset in DATASET_PRESETS.values():
-            eval_name = (
-                EVAL_TASKS[preset.related_eval_id].name
-                if preset.related_eval_id in EVAL_TASKS
-                else preset.related_eval_id
-            )
-            self.preset_combo.addItem(
-                f"{preset.name} → {eval_name}",
-                preset.preset_id,
-            )
-            idx = self.preset_combo.count() - 1
-            self.preset_combo.setItemData(idx, preset.description, Qt.ItemDataRole.ToolTipRole)
+        self.preset_combo.setMinimumWidth(320)
+        self._core_preset_ids = {preset.preset_id for preset in DATASET_PRESETS.values()}
+        self._fill_dataset_combo(FEATURED_DATASETS)
         self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
         preset_row.addWidget(self.preset_combo, stretch=1)
 
@@ -378,6 +382,46 @@ class TrainingTab(QWidget):
             "Hide advanced settings" if visible else "Show advanced settings"
         )
 
+    def _fill_dataset_combo(self, trending: list[HubDataset] | tuple[HubDataset, ...]) -> None:
+        current = self.preset_combo.currentData() if hasattr(self, "preset_combo") else ""
+        self.preset_combo.blockSignals(True)
+        self.preset_combo.clear()
+        self.preset_combo.addItem("Select dataset…", "")
+        for preset in DATASET_PRESETS.values():
+            eval_name = (
+                EVAL_TASKS[preset.related_eval_id].name
+                if preset.related_eval_id in EVAL_TASKS
+                else ""
+            )
+            label = f"{preset.name} → {eval_name}" if eval_name else preset.name
+            self.preset_combo.addItem(label, preset.preset_id)
+            idx = self.preset_combo.count() - 1
+            self.preset_combo.setItemData(idx, preset.description, Qt.ItemDataRole.ToolTipRole)
+        seen = set(self._core_preset_ids)
+        for dataset in trending:
+            preset_id = hub_preset_id(dataset.repo_id)
+            if dataset.repo_id in seen or preset_id in seen:
+                continue
+            seen.add(dataset.repo_id)
+            self.preset_combo.addItem(f"{dataset.name}  ·  {dataset.repo_id}", preset_id)
+            idx = self.preset_combo.count() - 1
+            self.preset_combo.setItemData(
+                idx,
+                f"Trending Hugging Face dataset {dataset.repo_id}",
+                Qt.ItemDataRole.ToolTipRole,
+            )
+        if current:
+            index = self.preset_combo.findData(current)
+            self.preset_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.preset_combo.blockSignals(False)
+
+    def _start_trending_fetch(self) -> None:
+        if self._trending_worker and self._trending_worker.isRunning():
+            return
+        self._trending_worker = _DatasetTrendingWorker(self.config.hf_token, self)
+        self._trending_worker.ready.connect(self._fill_dataset_combo)
+        self._trending_worker.start()
+
     def _sync_preset_combo(self) -> None:
         preset_id = self.config.training.dataset_preset_id
         if not preset_id:
@@ -398,13 +442,18 @@ class TrainingTab(QWidget):
         if not preset:
             self.preset_status.setText(f"Unknown preset: {preset_id}")
             return
-        eval_name = (
-            EVAL_TASKS[preset.related_eval_id].name
-            if preset.related_eval_id in EVAL_TASKS
-            else preset.related_eval_id
-        )
         mode = "offline" if self.config.training.dataset_use_bundled_only else "HF"
-        self.preset_status.setText(f"Active: {preset.name} → {eval_name} · {mode}")
+        if preset.related_eval_id in EVAL_TASKS:
+            eval_name = EVAL_TASKS[preset.related_eval_id].name
+            self.preset_status.setText(f"Active: {preset.name} → {eval_name} · {mode}")
+        elif preset.hf_dataset:
+            self.preset_status.setText(f"Active: {preset.name} · {preset.hf_dataset} · {mode}")
+        else:
+            self.preset_status.setText(f"Active: {preset.name} · {mode}")
+        if mode == "offline" and not preset.bundled_filename:
+            self.preset_status.setText(
+                f"{preset.name} has no offline sample. Uncheck offline-only to load it from Hugging Face."
+            )
 
     def _on_preset_changed(self, index: int) -> None:
         if self._block_sync:

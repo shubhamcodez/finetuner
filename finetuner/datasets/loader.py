@@ -8,36 +8,7 @@ from datasets import Dataset
 from finetuner.core.paths import bundled_assets_dir
 from finetuner.datasets.hf_datasets import load_hf_split, normalize_hf_dataset_id
 from finetuner.datasets.presets import FORMATTERS, get_preset
-
-
-def _messages_to_text(messages: list) -> str:
-    parts = []
-    for msg in messages:
-        role = msg.get("role", "user")
-        content = msg.get("content", "")
-        parts.append(f"{role}: {content}")
-    return "\n".join(parts)
-
-
-def _row_to_text(row: dict, formatter) -> str | None:
-    if formatter:
-        text = formatter(row)
-        if text:
-            return text
-    if "text" in row:
-        return row["text"]
-    if "messages" in row:
-        return _messages_to_text(row["messages"])
-    if "instruction" in row and "output" in row:
-        inst = row.get("instruction", "")
-        inp = row.get("input", "")
-        out = row.get("output", "")
-        text = f"### Instruction:\n{inst}\n"
-        if inp:
-            text += f"### Input:\n{inp}\n"
-        text += f"### Response:\n{out}"
-        return text
-    return None
+from finetuner.datasets.rows import row_to_text
 
 
 def _load_jsonl(path: Path, formatter, limit: int | None) -> Dataset:
@@ -48,7 +19,7 @@ def _load_jsonl(path: Path, formatter, limit: int | None) -> Dataset:
             if not line:
                 continue
             row = json.loads(line)
-            text = _row_to_text(row, formatter)
+            text = row_to_text(row, formatter)
             if text:
                 rows.append({"text": text})
             if limit and len(rows) >= limit:
@@ -123,7 +94,7 @@ def load_preset_dataset(
 
         rows = []
         for row in raw:
-            text = formatter(row) if formatter else _row_to_text(row, None)
+            text = row_to_text(row, formatter)
             if text:
                 rows.append({"text": text})
 

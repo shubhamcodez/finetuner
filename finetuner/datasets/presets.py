@@ -166,5 +166,28 @@ def preset_list() -> list[DatasetPreset]:
     return list(DATASET_PRESETS.values())
 
 
+def hub_repo_id(preset_id: str) -> str:
+    value = (preset_id or "").strip()
+    if value.startswith("hf:"):
+        return value[3:].strip()
+    if "/" in value and value not in DATASET_PRESETS:
+        return value
+    return ""
+
+
 def get_preset(preset_id: str) -> DatasetPreset | None:
-    return DATASET_PRESETS.get(preset_id)
+    found = DATASET_PRESETS.get(preset_id)
+    if found is not None:
+        return found
+    repo = hub_repo_id(preset_id)
+    if not repo:
+        return None
+    short = repo.rsplit("/", 1)[-1].replace("_", " ").replace("-", " ")
+    return DatasetPreset(
+        preset_id=preset_id if preset_id.startswith("hf:") else f"hf:{repo}",
+        name=short,
+        description=f"Hugging Face dataset {repo}",
+        related_eval_id="",
+        hf_dataset=repo,
+        max_samples=500,
+    )

@@ -43,7 +43,7 @@ class ResultsTab(QWidget):
         self.summary_frame.setObjectName("SummaryBanner")
         summary_layout = QVBoxLayout(self.summary_frame)
         summary_layout.setContentsMargins(0, 0, 0, 0)
-            self.summary_label = QLabel("No finetune runs yet. Finetune a model to see runs and metrics here.")
+        self.summary_label = QLabel("No finetune runs yet. Finetune a model to see runs and metrics here.")
         self.summary_label.setWordWrap(True)
         summary_layout.addWidget(self.summary_label)
         layout.addWidget(self.summary_frame)

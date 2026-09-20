@@ -27,7 +27,6 @@ from PySide6.QtWidgets import (
 from finetuner.core.download_worker import DownloadWorker
 from finetuner.core.hf_trending import FEATURED_MODELS, HubModel, fetch_trending_models
 from finetuner.core.job import ModelJob, ModelSource, ProjectConfig
-from finetuner.core.paths import DEFAULT_MODEL_ID
 
 
 class _TrendingWorker(QThread):
@@ -61,17 +60,15 @@ class AddModelDialog(QDialog):
         self.source_combo.currentIndexChanged.connect(self._on_source_changed)
 
         self.name_combo = QComboBox()
-        self.name_combo.setEditable(True)
-        self.name_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.name_combo.setEditable(False)
         self.name_combo.setMinimumWidth(320)
-        name_edit = self.name_combo.lineEdit()
-        if name_edit is not None:
-            name_edit.setPlaceholderText("Select a trending model or type a name")
-            name_edit.editingFinished.connect(self._on_name_typed)
+        self.name_combo.setMaxVisibleItems(16)
+        self.name_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.name_combo.setMinimumContentsLength(28)
         self.name_combo.currentIndexChanged.connect(self._on_name_chosen)
 
         self.identifier_edit = QLineEdit()
-        self.identifier_edit.setPlaceholderText(DEFAULT_MODEL_ID)
+        self.identifier_edit.setPlaceholderText("org/model")
 
         self.browse_btn = QPushButton("Folder...")
         self.browse_btn.clicked.connect(self._browse)
@@ -99,21 +96,21 @@ class AddModelDialog(QDialog):
         self._start_trending_fetch(token)
 
     def _fill_names(self, models: list[HubModel] | tuple[HubModel, ...]) -> None:
-        previous = self.name_combo.currentData() or self.name_combo.currentText().strip()
+        previous = self.name_combo.currentData()
         self.name_combo.blockSignals(True)
         self.name_combo.clear()
+        self.name_combo.addItem("Select a trending model…", "")
         for model in models:
-            self.name_combo.addItem(model.name, model.repo_id)
-        index = self.name_combo.findData(previous)
-        if index < 0:
-            index = self.name_combo.findText(previous)
+            self.name_combo.addItem(f"{model.name}  ·  {model.repo_id}", model.repo_id)
+        index = self.name_combo.findData(previous) if previous else 0
         if index < 0:
             index = 0
-        if self.name_combo.count():
-            self.name_combo.setCurrentIndex(index)
+        self.name_combo.setCurrentIndex(index)
         self.name_combo.blockSignals(False)
-        if self.source_combo.currentIndex() == 0:
-            self._on_name_chosen(self.name_combo.currentIndex())
+        if index == 0 and self.source_combo.currentIndex() == 0:
+            self.identifier_edit.clear()
+        elif index > 0:
+            self._on_name_chosen(index)
 
     def _start_trending_fetch(self, token: str) -> None:
         self._trending_worker = _TrendingWorker(token, self)
@@ -127,25 +124,17 @@ class AddModelDialog(QDialog):
         if repo_id:
             self.identifier_edit.setText(repo_id)
 
-    def _on_name_typed(self) -> None:
-        text = self.name_combo.currentText().strip()
-        if self.source_combo.currentIndex() == 0 and "/" in text:
-            self.identifier_edit.setText(text)
-
     def _on_source_changed(self, index: int) -> None:
         is_local = index == 1
         self.browse_btn.setVisible(is_local)
         self.browse_file_btn.setVisible(is_local)
+        self.name_combo.setEnabled(not is_local)
         if is_local:
-            self.name_combo.setEditable(True)
-            if self.name_combo.lineEdit() is not None:
-                self.name_combo.lineEdit().setPlaceholderText("Display name (optional)")
             self.identifier_edit.setPlaceholderText("C:\\models\\my-model or model.gguf")
         else:
-            if self.name_combo.lineEdit() is not None:
-                self.name_combo.lineEdit().setPlaceholderText("Select a trending model or type a repo id")
-            self.identifier_edit.setPlaceholderText(DEFAULT_MODEL_ID)
-            self._on_name_chosen(self.name_combo.currentIndex())
+            self.identifier_edit.setPlaceholderText("org/model or pick a name above")
+            if self.name_combo.currentIndex() > 0:
+                self._on_name_chosen(self.name_combo.currentIndex())
 
     def _browse(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select Model Folder")
@@ -162,9 +151,13 @@ class AddModelDialog(QDialog):
     def validate_and_accept(self) -> None:
         identifier = self.identifier_edit.text().strip()
         typed = self.name_combo.currentText().strip()
+        if typed.startswith("Select"):
+            typed = ""
         is_local = self.source_combo.currentIndex() == 1
         if not is_local and "/" in typed:
             identifier = typed
+        if not is_local and not identifier:
+            identifier = str(self.name_combo.currentData() or "")
         if not identifier:
             QMessageBox.warning(self, "Validation", "Enter a model ID or path.")
             return
