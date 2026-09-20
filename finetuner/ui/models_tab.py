@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
@@ -16,8 +16,6 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -30,7 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from finetuner.core.download_worker import DownloadWorker
-from finetuner.core.hf_trending import FEATURED_MODELS, HubModel, fetch_trending_models
+from finetuner.core.hf_trending import FEATURED_MODELS, HubModel, fetch_trending_models, format_count
 from finetuner.core.job import ModelJob, ModelSource, ProjectConfig
 from finetuner.ui.icons import line_icon
 from finetuner.ui.theme import Token
@@ -47,60 +45,232 @@ class _TrendingWorker(QThread):
         self.ready.emit(fetch_trending_models(token=self._token))
 
 
-class TrendingModelSelect(QFrame):
-    """Rounded select that starts empty and lists trending Hub models."""
+def _plain_font(widget: QLabel) -> None:
+    font = QFont(widget.font())
+    font.setWeight(QFont.Weight.Normal)
+    widget.setFont(font)
+
+
+_CAPABILITY_CHIPS = (
+    ("vision", "Vision", "#E8C44A"),
+    ("tools", "Tool Use", "#5B9BFF"),
+    ("reasoning", "Reasoning", "#C6DE4A"),
+)
+
+
+def _card_meta(model: HubModel) -> str:
+    bits: list[str] = []
+    if model.params:
+        bits.append(model.params)
+    if model.license:
+        bits.append(model.license)
+    pipeline = model.pipeline.replace("-", " ").strip()
+    if pipeline:
+        bits.append(pipeline)
+    return "   ".join(bits)
+
+
+def _stat_chip(icon: str, text: str) -> QWidget:
+    chip = QWidget()
+    chip.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+    row = QHBoxLayout(chip)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(6)
+    mark = QLabel()
+    mark.setPixmap(line_icon(icon, Token.TEXT_SECONDARY, 14).pixmap(14, 14))
+    label = QLabel(text)
+    label.setObjectName("HubModelCardStat")
+    _plain_font(label)
+    row.addWidget(mark)
+    row.addWidget(label)
+    return chip
+
+
+def _download_row(model: HubModel) -> QHBoxLayout | None:
+    downloads = format_count(model.downloads)
+    likes = format_count(model.likes)
+    if not downloads and not likes:
+        return None
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 2, 0, 0)
+    row.setSpacing(16)
+    if downloads:
+        row.addWidget(_stat_chip("downloads", f"{downloads} downloads so far"))
+    if likes:
+        row.addWidget(_stat_chip("likes", f"{likes} likes"))
+    row.addStretch()
+    return row
+
+
+class HubModelCard(QFrame):
+    clicked = Signal(object)
+
+    def __init__(self, model: HubModel, parent=None) -> None:
+        super().__init__(parent)
+        self.model = model
+        self.setObjectName("HubModelCard")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(4)
+
+        title = QLabel(model.name)
+        title.setObjectName("HubModelCardTitle")
+        title.setWordWrap(True)
+        _plain_font(title)
+        repo = QLabel(f"{model.org}  /  {model.repo_id}" if model.org else model.repo_id)
+        repo.setObjectName("HubModelCardRepo")
+        repo.setWordWrap(True)
+        _plain_font(repo)
+        layout.addWidget(title)
+        layout.addWidget(repo)
+
+        stats = _download_row(model)
+        if stats is not None:
+            layout.addLayout(stats)
+
+        if model.description:
+            body = QLabel(model.description)
+            body.setObjectName("HubModelCardBody")
+            body.setWordWrap(True)
+            body.setMaximumHeight(48)
+            _plain_font(body)
+            layout.addWidget(body)
+
+        caps = _capability_row(model)
+        if caps is not None:
+            layout.addSpacing(6)
+            layout.addLayout(caps)
+
+        meta = _card_meta(model)
+        if meta:
+            stats = QLabel(meta)
+            stats.setObjectName("HubModelCardMeta")
+            stats.setWordWrap(True)
+            _plain_font(stats)
+            layout.addWidget(stats)
+
+    def set_selected(self, selected: bool) -> None:
+        self.setProperty("selected", selected)
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.model)
+        super().mousePressEvent(event)
+
+
+def _capability_row(model: HubModel) -> QHBoxLayout | None:
+    present = set(model.shown_capabilities())
+    chips = [spec for spec in _CAPABILITY_CHIPS if spec[0] in present]
+    if not chips:
+        return None
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(8)
+    eyebrow = QLabel("CAPABILITIES")
+    eyebrow.setObjectName("CapabilityEyebrow")
+    eyebrow.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+    _plain_font(eyebrow)
+    row.addWidget(eyebrow, 0, Qt.AlignmentFlag.AlignVCenter)
+    for key, title, color in chips:
+        row.addWidget(_capability_pill(key, title, color), 0, Qt.AlignmentFlag.AlignVCenter)
+    row.addStretch()
+    return row
+
+
+def _capability_pill(key: str, title: str, color: str) -> QFrame:
+    pill = QFrame()
+    pill.setObjectName("CapabilityPill")
+    pill.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    pill.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+    inner = QHBoxLayout(pill)
+    inner.setContentsMargins(10, 4, 12, 4)
+    inner.setSpacing(6)
+    icon = QLabel()
+    icon.setPixmap(line_icon(key, color, 14).pixmap(14, 14))
+    label = QLabel(title)
+    label.setObjectName("CapabilityPillLabel")
+    label.setStyleSheet(f"color: {color}; background: transparent; font-size: 12px; font-weight: 400;")
+    _plain_font(label)
+    inner.addWidget(icon)
+    inner.addWidget(label)
+    return pill
+
+
+class TrendingModelSelect(QWidget):
+    """Rounded select plus a scroll of full Hugging Face model cards."""
 
     model_chosen = Signal(object)
     _PLACEHOLDER = "Select a trending model"
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setObjectName("TrendingSelect")
-        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setFrameShape(QFrame.Shape.NoFrame)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.setMinimumHeight(40)
         self._models: list[HubModel] = []
         self._selected: HubModel | None = None
+        self._cards: list[HubModelCard] = []
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        row = QHBoxLayout(self)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(10)
+
+        self.field = QFrame()
+        self.field.setObjectName("TrendingSelect")
+        self.field.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.field.setMinimumHeight(40)
+        row = QHBoxLayout(self.field)
         row.setContentsMargins(4, 0, 4, 0)
         row.setSpacing(8)
         self.caption = QLabel(self._PLACEHOLDER)
         self.caption.setObjectName("TrendingSelectLabel")
         self.caption.setProperty("filled", False)
-        caption_font = QFont(self.caption.font())
-        caption_font.setWeight(QFont.Weight.Normal)
-        caption_font.setStyleStrategy(QFont.StyleStrategy.PreferNoHinting)
-        self.caption.setFont(caption_font)
+        _plain_font(self.caption)
         chevron = QLabel()
         chevron.setPixmap(line_icon("chevron-down", Token.TEXT_TERTIARY, 16).pixmap(16, 16))
         row.addWidget(self.caption, 1)
         row.addWidget(chevron, 0, Qt.AlignmentFlag.AlignVCenter)
+        root.addWidget(self.field)
 
-        self._popup = QFrame(None, Qt.WindowType.Popup)
-        self._popup.setObjectName("TrendingPopup")
-        self._popup.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        pop = QVBoxLayout(self._popup)
-        pop.setContentsMargins(4, 4, 4, 4)
-        self._list = QListWidget()
-        self._list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._list.itemClicked.connect(self._pick)
-        pop.addWidget(self._list)
+        self.cards_scroll = QScrollArea()
+        self.cards_scroll.setObjectName("HubModelCardList")
+        self.cards_scroll.setWidgetResizable(True)
+        self.cards_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.cards_scroll.setMinimumHeight(280)
+        self.cards_scroll.setMaximumHeight(360)
+        self._cards_host = QWidget()
+        self._cards_layout = QVBoxLayout(self._cards_host)
+        self._cards_layout.setContentsMargins(0, 0, 2, 0)
+        self._cards_layout.setSpacing(8)
+        self._cards_layout.addStretch()
+        self.cards_scroll.setWidget(self._cards_host)
+        root.addWidget(self.cards_scroll)
 
     def set_models(self, models: list[HubModel] | tuple[HubModel, ...]) -> None:
         current = self._selected.repo_id if self._selected else ""
         self._models = list(models)
-        self._list.clear()
+        while self._cards_layout.count():
+            item = self._cards_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._cards = []
         for model in self._models:
-            item = QListWidgetItem(f"{model.name}    {model.repo_id}")
-            item.setData(Qt.ItemDataRole.UserRole, model)
-            self._list.addItem(item)
+            card = HubModelCard(model)
+            card.clicked.connect(self._apply)
+            self._cards.append(card)
+            self._cards_layout.addWidget(card)
+        self._cards_layout.addStretch()
         if current:
             match = next((model for model in self._models if model.repo_id == current), None)
             if match is not None:
                 self._apply(match, emit=False)
+        else:
+            self._paint_selection()
 
     def selected(self) -> HubModel | None:
         return self._selected
@@ -109,33 +279,20 @@ class TrendingModelSelect(QFrame):
         if 0 <= index < len(self._models):
             self._apply(self._models[index])
 
-    def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
-            self._open()
-        super().mousePressEvent(event)
-
-    def _open(self) -> None:
-        if self._list.count() == 0:
-            return
-        width = max(self.width(), 360)
-        self._popup.resize(width, min(320, 36 * self._list.count() + 12))
-        self._popup.move(self.mapToGlobal(QPoint(0, self.height() + 4)))
-        self._popup.show()
-
-    def _pick(self, item: QListWidgetItem) -> None:
-        model = item.data(Qt.ItemDataRole.UserRole)
-        self._popup.hide()
-        if isinstance(model, HubModel):
-            self._apply(model)
-
     def _apply(self, model: HubModel, emit: bool = True) -> None:
         self._selected = model
-        self.caption.setText(f"{model.name}  {model.repo_id}")
+        self.caption.setText(model.name)
         self.caption.setProperty("filled", True)
         self.caption.style().unpolish(self.caption)
         self.caption.style().polish(self.caption)
+        self._paint_selection()
         if emit:
             self.model_chosen.emit(model)
+
+    def _paint_selection(self) -> None:
+        selected_id = self._selected.repo_id if self._selected else ""
+        for card in self._cards:
+            card.set_selected(card.model.repo_id == selected_id)
 
 
 def validate_local_model(path: Path) -> tuple[bool, str]:
@@ -149,7 +306,8 @@ class AddModelDialog(QDialog):
     def __init__(self, parent=None, token: str = "") -> None:
         super().__init__(parent)
         self.setWindowTitle("Add Model")
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(560)
+        self.setMinimumHeight(540)
         self._trending_worker: _TrendingWorker | None = None
 
         layout = QFormLayout(self)
@@ -208,6 +366,7 @@ class AddModelDialog(QDialog):
         self.browse_btn.setVisible(is_local)
         self.browse_file_btn.setVisible(is_local)
         self.name_combo.setEnabled(not is_local)
+        self.name_combo.cards_scroll.setVisible(not is_local)
         if is_local:
             self.identifier_edit.setPlaceholderText("C:\\models\\my-model or model.gguf")
         else:

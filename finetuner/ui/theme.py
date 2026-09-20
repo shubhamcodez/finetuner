@@ -334,23 +334,67 @@ QComboBox::down-arrow {{
 #TrendingSelectLabel[filled="true"] {{
     color: {t.TEXT};
 }}
-#TrendingPopup {{
+#HubModelCard {{
     background-color: {t.SURFACE};
     border: 1px solid {t.BORDER};
     border-radius: {t.RADIUS_CARD};
 }}
-#TrendingPopup QListWidget {{
+#HubModelCard:hover {{
+    background-color: {t.HOVER};
+    border-color: {t.ACCENT_BORDER};
+}}
+#HubModelCard[selected="true"] {{
+    background-color: {t.ACCENT_SUBTLE};
+    border-color: {t.ACCENT_BORDER};
+}}
+#HubModelCardTitle {{
+    background: transparent;
+    color: {t.TEXT};
+    font-size: 14px;
+    font-weight: 400;
+}}
+#HubModelCardRepo {{
+    background: transparent;
+    color: {t.TEXT_SECONDARY};
+    font-size: 12px;
+    font-weight: 400;
+}}
+#HubModelCardBody {{
+    background: transparent;
+    color: {t.TEXT_SECONDARY};
+    font-size: 12px;
+    font-weight: 400;
+}}
+#HubModelCardMeta {{
+    background: transparent;
+    color: {t.TEXT_TERTIARY};
+    font-size: 11px;
+    font-weight: 400;
+}}
+#HubModelCardStat {{
+    background: transparent;
+    color: {t.TEXT_SECONDARY};
+    font-size: 12px;
+    font-weight: 400;
+}}
+#HubModelCardList {{
     background: transparent;
     border: none;
 }}
-#TrendingPopup QListWidget::item {{
-    padding: 8px 12px;
-    color: {t.TEXT};
+#CapabilityEyebrow {{
+    background: transparent;
+    color: {t.TEXT_TERTIARY};
+    font-size: 11px;
+    font-weight: 400;
 }}
-#TrendingPopup QListWidget::item:hover,
-#TrendingPopup QListWidget::item:selected {{
-    background-color: {t.ACCENT_SUBTLE};
-    color: {t.TEXT};
+#CapabilityPill {{
+    background-color: {t.SURFACE_2};
+    border-radius: 999px;
+}}
+#CapabilityPillLabel {{
+    background: transparent;
+    font-size: 12px;
+    font-weight: 400;
 }}
 QComboBox QAbstractItemView {{
     background-color: {t.SURFACE};

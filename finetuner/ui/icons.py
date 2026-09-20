@@ -30,6 +30,11 @@ _PHOSPHOR = {
     "help": "ph.question",
     "chevron": "ph.caret-right",
     "chevron-down": "ph.caret-down",
+    "vision": "ph.eye",
+    "tools": "ph.wrench",
+    "reasoning": "ph.brain",
+    "downloads": "ph.download-simple",
+    "likes": "ph.heart",
 }
 
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QFrame, QLabel
 
 from finetuner.core.job import ModelRunResult, ProjectConfig
 from finetuner.monitor.stats import SystemStats
@@ -9,7 +9,8 @@ from finetuner.ui.analysis_tab import AnalysisTab
 from finetuner.ui.deployment_tab import DeploymentTab
 from finetuner.ui.distillation_tab import DistillationTab
 from finetuner.ui.inference_tab import InferenceTab
-from finetuner.ui.models_tab import AddModelDialog
+from finetuner.core.hf_trending import HubModel
+from finetuner.ui.models_tab import AddModelDialog, HubModelCard
 from finetuner.ui.monitor_tab import MonitorTab
 from finetuner.ui.project_tab import ProjectTab
 from finetuner.ui.results_tab import ResultsTab
@@ -96,10 +97,31 @@ def test_add_model_dialog_lists_huggingface_choices(app, monkeypatch):
     assert picker.caption.text() == "Select a trending model"
     assert dialog.identifier_edit.text() == ""
     assert len(picker._models) > 4
+    assert len(picker._cards) == len(picker._models)
+    assert picker._cards[0].model.description
+    vision = next(card for card in picker._cards if "vision" in card.model.shown_capabilities())
+    texts = [child.text() for child in vision.findChildren(QLabel) if child.text()]
+    assert "CAPABILITIES" in texts
+    assert "Vision" in texts
+    assert "Tool Use" in texts
+    pills = [child for child in vision.findChildren(QFrame) if child.objectName() == "CapabilityPill"]
+    assert pills
     assert any("Qwen" in label or "qwen" in label.lower() for label in labels)
     picker.choose_index(0)
     assert "/" in dialog.identifier_edit.text()
+    assert picker._cards[0].property("selected") is True
     dialog.close()
+
+
+@pytest.mark.ui
+def test_model_card_shows_huggingface_downloads(app):
+    card = HubModelCard(
+        HubModel("org/hot-model", "Hot Model", downloads=1_250_000, likes=880)
+    )
+    texts = [child.text() for child in card.findChildren(QLabel) if child.text()]
+    assert any("downloads so far" in text for text in texts)
+    assert any("1.2M" in text for text in texts)
+    assert any("likes" in text for text in texts)
 
 
 @pytest.mark.ui
