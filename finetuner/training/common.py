@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from datasets import Dataset
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
@@ -11,18 +12,44 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from finetuner.core.job import TrainingConfig
 
 
+def allow_cpu_train() -> bool:
+    return os.environ.get("FINETUNER_ALLOW_CPU_TRAIN", "").strip().lower() in {"1", "true", "yes"}
+
+
+def cuda_available() -> bool:
+    import torch
+
+    return bool(torch.cuda.is_available())
+
+
+def train_runtime() -> dict[str, Any]:
+    import torch
+
+    cuda = cuda_available()
+    return {
+        "device": "cuda" if cuda else "cpu",
+        "dtype": torch.float16 if cuda else torch.float32,
+        "fp16": cuda,
+        "device_map": "auto" if cuda else None,
+    }
+
+
 def require_cuda() -> None:
     import torch
 
-    if not torch.cuda.is_available():
-        version = getattr(torch, "__version__", "unknown")
-        raise RuntimeError(
-            "CUDA GPU not available. Fine-tuning requires an NVIDIA GPU with PyTorch CUDA support.\n"
-            f"Installed torch: {version}\n"
-            "If this shows '+cpu', reinstall with:\n"
-            "  pip install torch==2.11.0 torchvision torchaudio "
-            "--index-url https://download.pytorch.org/whl/cu128"
-        )
+    if cuda_available():
+        return
+    if allow_cpu_train():
+        return
+    version = getattr(torch, "__version__", "unknown")
+    raise RuntimeError(
+        "CUDA GPU not available. Fine-tuning requires an NVIDIA GPU with PyTorch CUDA support.\n"
+        f"Installed torch: {version}\n"
+        "If this shows '+cpu', reinstall with:\n"
+        "  pip install torch==2.11.0 torchvision torchaudio "
+        "--index-url https://download.pytorch.org/whl/cu128\n"
+        "Research sweeps can set FINETUNER_ALLOW_CPU_TRAIN=1 and disable QLoRA."
+    )
 
 
 def load_tokenizer(model_path: str):
@@ -35,7 +62,10 @@ def load_tokenizer(model_path: str):
 def load_lora_model(model_path: str, training: TrainingConfig, log: Callable[[str], None]):
     import torch
 
+    runtime = train_runtime()
     if training.use_qlora:
+        if runtime["device"] != "cuda":
+            raise RuntimeError("QLoRA requires CUDA. Disable QLoRA to train with LoRA on CPU.")
         log("Loading model with QLoRA (4-bit)...")
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -58,13 +88,16 @@ def load_lora_model(model_path: str, training: TrainingConfig, log: Callable[[st
         model = prepare_model_for_kbit_training(model)
         log("QLoRA load successful.")
     else:
-        log("Loading model with fp16 LoRA...")
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.float16,
-            device_map="auto",
-            trust_remote_code=True,
-        )
+        log(f"Loading model with {runtime['dtype']} LoRA on {runtime['device']}...")
+        kwargs: dict[str, Any] = {
+            "torch_dtype": runtime["dtype"],
+            "trust_remote_code": True,
+        }
+        if runtime["device_map"]:
+            kwargs["device_map"] = runtime["device_map"]
+        model = AutoModelForCausalLM.from_pretrained(model_path, **kwargs)
+        if runtime["device"] == "cpu":
+            model = model.to("cpu")
 
     lora_config = LoraConfig(
         r=training.lora_rank,
@@ -80,18 +113,22 @@ def load_lora_model(model_path: str, training: TrainingConfig, log: Callable[[st
 
 
 def base_training_kwargs(training: TrainingConfig, output_dir: Path) -> dict:
-    return {
+    runtime = train_runtime()
+    kwargs = {
         "output_dir": str(output_dir),
         "max_steps": training.max_steps,
         "learning_rate": training.learning_rate,
         "per_device_train_batch_size": training.batch_size,
         "gradient_accumulation_steps": training.gradient_accumulation_steps,
-        "logging_steps": 5,
+        "logging_steps": min(5, max(1, training.max_steps)),
         "save_steps": training.max_steps,
         "save_total_limit": 1,
-        "fp16": True,
+        "fp16": runtime["fp16"],
         "report_to": "none",
     }
+    if runtime["device"] == "cpu":
+        kwargs["use_cpu"] = True
+    return kwargs
 
 
 def save_and_merge(trainer, tokenizer, output_dir: Path, log: Callable[[str], None]) -> str:

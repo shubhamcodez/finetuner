@@ -28,6 +28,7 @@ def test_fetch_falls_back_when_hub_fails(monkeypatch):
         raise RuntimeError("offline")
 
     monkeypatch.setattr("finetuner.core.hf_trending._query_hub", broken)
+    monkeypatch.setattr("finetuner.core.hf_trending._fill_missing_stats", lambda models, _token: models)
     models = fetch_trending_models(timeout_s=0.5)
     assert models == list(FEATURED_MODELS)
 
@@ -36,6 +37,19 @@ def test_fetch_returns_live_trending(monkeypatch):
     live = [HubModel("org/hot-model", "hot model")]
     monkeypatch.setattr("finetuner.core.hf_trending._query_hub", lambda _limit, _token: live)
     assert fetch_trending_models(timeout_s=2) == live
+
+
+def test_fallback_featured_cards_receive_hub_downloads(monkeypatch):
+    featured = FEATURED_MODELS[0]
+    monkeypatch.setattr("finetuner.core.hf_trending._query_hub", lambda _limit, _token: [])
+
+    def fake_fill(models, _token):
+        return [HubModel(models[0].repo_id, models[0].name, downloads=12_400)]
+
+    monkeypatch.setattr("finetuner.core.hf_trending._fill_missing_stats", fake_fill)
+    models = fetch_trending_models(timeout_s=0.5)
+    assert models[0].repo_id == featured.repo_id
+    assert models[0].downloads == 12_400
 
 
 def test_hub_download_total_prefers_all_time():

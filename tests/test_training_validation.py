@@ -14,3 +14,18 @@ def test_online_rl_generation_count_must_divide_effective_batch():
 def test_duplicate_lora_targets_are_rejected():
     config = TrainingConfig(lora_target_modules=["q_proj", "q_proj"])
     assert any("duplicates" in error for error in validate_training_config(config, "sft"))
+
+
+def test_sweep_defaults_validate_for_every_page_method():
+    from finetuner.training.efficiency import PAGE_METHODS
+
+    config = TrainingConfig(
+        batch_size=1,
+        gradient_accumulation_steps=4,
+        grpo_num_generations=2,
+        use_qlora=False,
+        allow_synthetic_preferences=True,
+        max_steps=8,
+    )
+    for method in PAGE_METHODS:
+        assert validate_training_config(config, method) == []

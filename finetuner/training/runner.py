@@ -23,6 +23,7 @@ from finetuner.training.common import (
     load_tokenizer,
     require_cuda,
     save_and_merge,
+    train_runtime,
 )
 from finetuner.training.dataset_formats import prepare_method_dataset
 from finetuner.training.methods import get_method
@@ -50,7 +51,9 @@ def train(
         raise ValueError("; ".join(config_errors))
 
     require_cuda()
+    runtime = train_runtime()
     log(f"Training method: {spec.name} — {spec.description}")
+    log(f"Device: {runtime['device']}")
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -204,17 +207,20 @@ def _train_kto(model_path, training, dataset, tokenizer, out, log):
 
 
 def _train_reward(model_path, training, dataset, tokenizer, out, log):
-    import torch
     from transformers import AutoModelForSequenceClassification
 
+    runtime = train_runtime()
     log("Loading base model for reward-model training...")
-    base = AutoModelForSequenceClassification.from_pretrained(
-        model_path,
-        num_labels=1,
-        torch_dtype=torch.float16,
-        device_map="auto",
-        trust_remote_code=True,
-    )
+    kwargs = {
+        "num_labels": 1,
+        "torch_dtype": runtime["dtype"],
+        "trust_remote_code": True,
+    }
+    if runtime["device_map"]:
+        kwargs["device_map"] = runtime["device_map"]
+    base = AutoModelForSequenceClassification.from_pretrained(model_path, **kwargs)
+    if runtime["device"] == "cpu":
+        base = base.to("cpu")
     reward_config = RewardConfig(
         **base_training_kwargs(training, out),
         max_length=training.max_seq_length,
@@ -236,7 +242,6 @@ def _train_reward(model_path, training, dataset, tokenizer, out, log):
 
 
 def _train_ppo(model_path, training, dataset, tokenizer, out, log):
-    import torch
     from peft import LoraConfig
     from transformers import AutoModelForCausalLM, AutoModelForSequenceClassification
     from trl.experimental.ppo import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer
@@ -246,26 +251,31 @@ def _train_ppo(model_path, training, dataset, tokenizer, out, log):
             "PPO requires a Reward Model ID (sequence-classification checkpoint on Hugging Face)."
         )
 
+    runtime = train_runtime()
     log("Loading policy and value models for PPO...")
-    policy = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        torch_dtype=torch.float16,
-        device_map="auto",
-        trust_remote_code=True,
-    )
+    policy_kwargs = {"torch_dtype": runtime["dtype"], "trust_remote_code": True}
+    if runtime["device_map"]:
+        policy_kwargs["device_map"] = runtime["device_map"]
+    policy = AutoModelForCausalLM.from_pretrained(model_path, **policy_kwargs)
     value_model = AutoModelForCausalLMWithValueHead.from_pretrained(
         model_path,
-        torch_dtype=torch.float16,
+        torch_dtype=runtime["dtype"],
         trust_remote_code=True,
     )
+    if runtime["device"] == "cpu":
+        policy = policy.to("cpu")
+        value_model = value_model.to("cpu")
 
     log(f"Loading reward model: {training.reward_model_id}")
+    reward_kwargs = {"torch_dtype": runtime["dtype"], "trust_remote_code": True}
+    if runtime["device_map"]:
+        reward_kwargs["device_map"] = runtime["device_map"]
     reward_model = AutoModelForSequenceClassification.from_pretrained(
         training.reward_model_id,
-        torch_dtype=torch.float16,
-        device_map="auto",
-        trust_remote_code=True,
+        **reward_kwargs,
     )
+    if runtime["device"] == "cpu":
+        reward_model = reward_model.to("cpu")
 
     lora_config = LoraConfig(
         r=training.lora_rank,
@@ -298,7 +308,7 @@ def _train_ppo(model_path, training, dataset, tokenizer, out, log):
         response_length=min(128, training.max_seq_length // 4),
         kl_coef=training.ppo_kl_coef,
         cliprange=training.ppo_cliprange,
-        fp16=True,
+        fp16=runtime["fp16"],
         report_to="none",
         logging_steps=5,
     )
