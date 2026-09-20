@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from finetuner.quantization.planner import compatible_backends, recommended_config
 from finetuner.quantization.runner import build_quantization_commands
 from finetuner.quantization.specs import (
