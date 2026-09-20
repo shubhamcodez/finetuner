@@ -54,10 +54,9 @@ def _area_summary(area_id: str, config: ProjectConfig) -> str:
         method = config.training.training_method.upper()
         return f"{_dataset_summary(config)} | {method}"
     if area_id == "distillation":
-        return (
-            f"{config.distillation.teacher_model or 'Teacher unset'} -> "
-            f"{config.distillation.student_model or 'student unset'}"
-        )
+        teacher = config.distillation.teacher_model or "Teacher model required"
+        student = config.distillation.student_model or "Student model required"
+        return f"{teacher} → {student}"
     if area_id == "evals":
         return ", ".join(config.enabled_evals) or "No benchmarks selected"
     if area_id == "analysis":

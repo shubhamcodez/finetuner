@@ -28,7 +28,7 @@ notes live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/RESEARCH.md
   cross-layer centered-kernel alignment (CKA)
 - Atomic run manifests containing stage status, duration, metrics, configuration digest, and artifact
   lineage
-- CPU, RAM, and NVIDIA GPU monitoring; Hugging Face/local model management; benchmark comparison
+- CPU, RAM, NVIDIA GPU, and NPU monitoring; Hugging Face/local model management; benchmark comparison
 
 Finetuner does not claim that one artifact runs optimally on every accelerator. Deployment is planned
 against a concrete runtime and device: GGUF for broad CPU/GPU support, OpenVINO for supported Intel
@@ -81,8 +81,27 @@ See the [user guide](docs/USER_GUIDE.md), [architecture](docs/ARCHITECTURE.md), 
 
 ## Build the Windows installer
 
+PyInstaller cannot cross-compile Windows binaries. Run the script on the architecture you
+want to ship. Each run writes a native setup EXE and a portable zip.
+
 ```powershell
-.\scripts\build_windows.ps1
+.\scripts\build_windows.ps1              # this PC (x64 or ARM64)
+.\scripts\build_windows.ps1 -Arch x64
+.\scripts\build_windows.ps1 -Arch arm64
 ```
 
-Inno Setup is required for the installer step.
+Outputs in `dist\`:
+
+- `Finetuner-Setup-x64.exe` or `Finetuner-Setup-arm64.exe` — Inno Setup installer
+- `Finetuner-windows-x64.zip` or `Finetuner-windows-arm64.zip` — portable folder
+
+x64 uses a CUDA PyTorch wheel when one is available, then falls back to CPU. ARM64 never
+installs CUDA. After both native folders exist, build a single picker:
+
+```powershell
+.\scripts\build_windows.ps1 -Universal
+```
+
+That produces `Finetuner-Setup-universal.exe`, which installs the x64 payload on x64 Windows
+and the ARM64 payload on ARM64 Windows (Snapdragon X Elite, etc.). Inno Setup 6.3 or newer
+is required (`-InstallInno` will try to install it). 32-bit Windows is not supported.

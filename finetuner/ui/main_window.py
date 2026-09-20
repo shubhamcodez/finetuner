@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QFrame,
+    QDockWidget,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -12,8 +13,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
-    QSplitter,
-    QTabWidget,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -22,17 +22,20 @@ from finetuner.core.actions import ActionKind, get_action
 from finetuner.core.config_store import load_config, save_config
 from finetuner.core.job import ModelRunResult, ProjectConfig
 from finetuner.core.preflight import collect_action_issues
-from finetuner.ui.branding import app_icon
 from finetuner.ui.analysis_tab import AnalysisTab
+from finetuner.ui.branding import app_icon
+from finetuner.ui.command_palette import CommandPalette
 from finetuner.ui.deployment_tab import DeploymentTab
 from finetuner.ui.distillation_tab import DistillationTab
-from finetuner.ui.inference_tab import InferenceTab
 from finetuner.ui.evals_tab import EvalsTab
+from finetuner.ui.inference_tab import InferenceTab
 from finetuner.ui.models_tab import ModelsTab
 from finetuner.ui.monitor_tab import MonitorTab
 from finetuner.ui.project_tab import ProjectTab
 from finetuner.ui.results_tab import ResultsTab
+from finetuner.ui.shell import Sidebar, PageHeader, WorkspaceBar
 from finetuner.ui.training_tab import TrainingTab
+from finetuner.ui.utility_pages import DocsPage, SettingsPage
 
 if TYPE_CHECKING:
     from finetuner.core.queue import JobQueue
@@ -119,26 +122,14 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Finetuner")
         self.setWindowIcon(app_icon())
-        self.resize(1180, 720)
-        self.setMinimumSize(960, 560)
+        self.resize(1440, 900)
+        self.setMinimumSize(1100, 700)
 
         self.config = load_config()
         self._worker: QueueWorker | None = None
         self._serve_worker: ServeWorker | None = None
+        self._area = "project"
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        main_layout = QVBoxLayout(central)
-        main_layout.setContentsMargins(10, 6, 10, 8)
-        main_layout.setSpacing(6)
-
-        main_layout.addWidget(self._build_header())
-
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.setChildrenCollapsible(False)
-
-        self.tabs = QTabWidget()
-        self.tabs.setDocumentMode(True)
         self.project_tab = ProjectTab(self.config)
         self.models_tab = ModelsTab(self.config)
         self.training_tab = TrainingTab(self.config)
@@ -149,21 +140,13 @@ class MainWindow(QMainWindow):
         self.analysis_tab = AnalysisTab(self.config)
         self.results_tab = ResultsTab()
         self.monitor_tab = MonitorTab()
+        self.docs_page = DocsPage()
+        self.settings_page = SettingsPage(self.config)
 
-        self.tabs.addTab(self.project_tab, "Project")
-        self.tabs.addTab(self.models_tab, "Models")
-        self.tabs.addTab(self.training_tab, "Data & Train")
-        self.tabs.addTab(self.distillation_tab, "Distillation")
-        self.tabs.addTab(self.evals_tab, "Evaluation")
-        self.tabs.addTab(self.analysis_tab, "Analysis")
-        self.tabs.addTab(self.deployment_tab, "Deployment")
-        self.tabs.addTab(self.inference_tab, "Inference")
-        self.tabs.addTab(self.results_tab, "Results")
-        self.tabs.addTab(self.monitor_tab, "System")
-
-        self._tab_by_area = {
+        self._page_by_area = {
             "project": self.project_tab,
             "models": self.models_tab,
+            "data": self.training_tab,
             "training": self.training_tab,
             "distillation": self.distillation_tab,
             "evals": self.evals_tab,
@@ -172,21 +155,69 @@ class MainWindow(QMainWindow):
             "inference": self.inference_tab,
             "results": self.results_tab,
             "monitor": self.monitor_tab,
+            "docs": self.docs_page,
+            "settings": self.settings_page,
         }
-        self._action_by_tab = {
-            self.training_tab: ActionKind.TRAIN.value,
-            self.distillation_tab: ActionKind.DISTILL.value,
-            self.evals_tab: ActionKind.EVALUATE.value,
-            self.analysis_tab: ActionKind.ANALYZE.value,
-            self.deployment_tab: ActionKind.QUANTIZE.value,
-            self.inference_tab: ActionKind.OPTIMIZE.value,
+        self._action_by_area = {
+            "training": ActionKind.TRAIN.value,
+            "distillation": ActionKind.DISTILL.value,
+            "evals": ActionKind.EVALUATE.value,
+            "analysis": ActionKind.ANALYZE.value,
+            "deployment": ActionKind.QUANTIZE.value,
+            "inference": ActionKind.OPTIMIZE.value,
         }
 
-        splitter.addWidget(self.tabs)
-        splitter.addWidget(self._build_log_panel())
-        splitter.setStretchFactor(0, 4)
-        splitter.setStretchFactor(1, 1)
-        main_layout.addWidget(splitter, stretch=1)
+        shell = QWidget()
+        shell.setObjectName("AppShell")
+        self.setCentralWidget(shell)
+        row = QHBoxLayout(shell)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self.sidebar = Sidebar()
+        self.sidebar.navigate.connect(self._navigate_to)
+        row.addWidget(self.sidebar)
+
+        workspace = QWidget()
+        workspace_layout = QVBoxLayout(workspace)
+        workspace_layout.setContentsMargins(32, 24, 32, 24)
+        workspace_layout.setSpacing(24)
+        top = QHBoxLayout()
+        self.page_header = PageHeader()
+        top.addWidget(self.page_header, 1)
+        self.workspace_bar = WorkspaceBar()
+        self.workspace_bar.command_requested.connect(self._open_palette)
+        self.workspace_bar.help_requested.connect(lambda: self._navigate_to("docs"))
+        top.addWidget(self.workspace_bar, 0)
+        workspace_layout.addLayout(top)
+
+        self.pages = QStackedWidget()
+        seen: set[int] = set()
+        for page in self._page_by_area.values():
+            if id(page) in seen:
+                continue
+            seen.add(id(page))
+            self.pages.addWidget(page)
+        workspace_layout.addWidget(self.pages, 1)
+        row.addWidget(workspace, 1)
+
+        self.run_btn = QPushButton("Start")
+        self.run_btn.setObjectName("PrimaryButton")
+        self.run_btn.clicked.connect(lambda: self._start_run())
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setObjectName("GhostButton")
+        self.cancel_btn.setEnabled(False)
+        self.cancel_btn.clicked.connect(self._cancel_run)
+        self.logs_btn = QPushButton("Logs")
+        self.logs_btn.setObjectName("SecondaryButton")
+        self.logs_btn.clicked.connect(self._toggle_logs)
+        self.page_header.actions.addWidget(self.logs_btn)
+        self.page_header.actions.addWidget(self.cancel_btn)
+        self.page_header.actions.addWidget(self.run_btn)
+
+        self._build_log_drawer()
+        self.palette = CommandPalette(self)
+        self.palette.activated.connect(self._navigate_to)
+        QShortcut(QKeySequence("Ctrl+K"), self, self._open_palette)
 
         for tab in (
             self.models_tab,
@@ -213,72 +244,38 @@ class MainWindow(QMainWindow):
         self.inference_tab.stop_requested.connect(self._stop_server)
         self.inference_tab.quantization_changed.connect(self.deployment_tab.reload_from_config)
         self.models_tab.model_ready.connect(self._on_model_ready)
-        self.tabs.currentChanged.connect(self._update_run_button)
-        self._update_run_button()
+        self._navigate_to("project")
 
-    def _build_header(self) -> QFrame:
-        header = QFrame()
-        header.setObjectName("AppHeader")
-        header.setFixedHeight(32)
-
-        row = QHBoxLayout(header)
-        row.setContentsMargins(10, 0, 10, 0)
-        row.setSpacing(8)
-        row.addStretch()
-
-        self.status_label = QLabel("Ready")
-        self.status_label.setObjectName("StatusBadge")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        row.addWidget(self.status_label)
-
-        return header
-
-    def _build_log_panel(self) -> QFrame:
-        panel = QFrame()
-        panel.setObjectName("LogPanel")
-        log_layout = QVBoxLayout(panel)
-        log_layout.setContentsMargins(8, 6, 8, 6)
-        log_layout.setSpacing(4)
-
-        toolbar = QHBoxLayout()
-        toolbar.setSpacing(6)
-        title = QLabel("Run Console")
-        title.setObjectName("LogPanelTitle")
-        toolbar.addWidget(title)
-        toolbar.addStretch()
-
-        self.run_btn = QPushButton("Start Run")
-        self.run_btn.setObjectName("PrimaryButton")
-        self.run_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.run_btn.clicked.connect(lambda: self._start_run())
-
-        self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setObjectName("SecondaryButton")
-        self.cancel_btn.setEnabled(False)
-        self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_btn.clicked.connect(self._cancel_run)
-
-        toolbar.addWidget(self.run_btn)
-        toolbar.addWidget(self.cancel_btn)
-        log_layout.addLayout(toolbar)
-
+    def _build_log_drawer(self) -> None:
+        self.log_drawer = QDockWidget("Run details", self)
+        self.log_drawer.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea)
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 16, 16, 16)
+        title = QLabel("Run details")
+        title.setObjectName("SectionTitle")
+        layout.addWidget(title)
+        self.status_label = self.workspace_bar.status
         self.run_progress = QProgressBar()
         self.run_progress.setRange(0, 100)
         self.run_progress.setValue(0)
         self.run_progress.setVisible(False)
-        self.run_progress.setTextVisible(True)
-        self.run_progress.setFixedHeight(8)
-        log_layout.addWidget(self.run_progress)
-
+        layout.addWidget(self.run_progress)
         self.log_view = QPlainTextEdit()
         self.log_view.setObjectName("LogConsole")
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(5000)
-        self.log_view.setPlaceholderText("Run logs will appear here...")
-        self.log_view.setMinimumHeight(72)
-        log_layout.addWidget(self.log_view, stretch=1)
+        self.log_view.setPlaceholderText("Logs for the active run appear here.")
+        layout.addWidget(self.log_view, 1)
+        self.log_drawer.setWidget(panel)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.log_drawer)
+        self.log_drawer.hide()
 
-        return panel
+    def _toggle_logs(self) -> None:
+        self.log_drawer.setVisible(not self.log_drawer.isVisible())
+
+    def _open_palette(self) -> None:
+        self.palette.open_palette()
 
     def _save_config(self) -> None:
         save_config(self.config)
@@ -289,9 +286,14 @@ class MainWindow(QMainWindow):
         self._update_run_button()
 
     def _navigate_to(self, area: str) -> None:
-        target = self._tab_by_area.get(area)
-        if target is not None:
-            self.tabs.setCurrentWidget(target)
+        target = self._page_by_area.get(area)
+        if target is None:
+            return
+        self._area = area
+        self.pages.setCurrentWidget(target)
+        self.sidebar.select(area)
+        self.page_header.set_page(area)
+        self._update_run_button()
 
     def _open_result_artifact(self, area: str, path: str) -> None:
         if area == "analysis":
@@ -301,18 +303,19 @@ class MainWindow(QMainWindow):
         self._navigate_to(area)
 
     def _current_action(self) -> str | None:
-        return self._action_by_tab.get(self.tabs.currentWidget())
+        return self._action_by_area.get(self._area)
 
     def _update_run_button(self, _index: int = 0) -> None:
         action = self._current_action()
         running = bool(self._worker and self._worker.isRunning())
         if action:
             spec = get_action(action)
-            self.run_btn.setText(f"Run {spec.title}")
+            self.run_btn.setText(spec.title)
+            self.run_btn.setVisible(True)
             self.run_btn.setEnabled(not running)
         else:
-            self.run_btn.setText("Run selected tool")
-            self.run_btn.setEnabled(False)
+            self.run_btn.setVisible(False)
+        self.cancel_btn.setEnabled(running)
 
     def _on_evals_suggest(self, eval_ids: list[str]) -> None:
         self.evals_tab.apply_selection(eval_ids)
@@ -327,7 +330,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "Choose a tool",
-                "Open Training, Distillation, Evaluation, Analysis, Deployment, or Inference, then run that tool.",
+                "Open Training, Distillation, Evaluation, Analysis, Deployment, or Inference, then start that tool.",
             )
             return
         issues = collect_action_issues(self.config, selected)
@@ -335,7 +338,7 @@ class MainWindow(QMainWindow):
             messages = list(dict.fromkeys(issue.message for issue in issues))
             QMessageBox.warning(
                 self,
-                "Tool Not Ready",
+                "Needs attention",
                 "Resolve these items before running:\n\n" + "\n".join(messages),
             )
             self._navigate_to(issues[0].area)
@@ -352,6 +355,7 @@ class MainWindow(QMainWindow):
         self.run_btn.setEnabled(False)
         self.cancel_btn.setEnabled(True)
         self.status_label.setText("Running")
+        self.log_drawer.show()
         self._append_log(f"Starting {spec.title.lower()}")
 
         self._worker = QueueWorker(self.config, selected, self)
@@ -396,7 +400,7 @@ class MainWindow(QMainWindow):
         self.cancel_btn.setEnabled(False)
         self.run_progress.setVisible(False)
         self.run_progress.setValue(0)
-        self.status_label.setText("Complete")
+        self.status_label.setText("Completed")
         self.project_tab.set_running(False)
         self._update_run_button()
         self._append_log("Run finished.")
@@ -429,20 +433,16 @@ class MainWindow(QMainWindow):
         box = QMessageBox(self)
         box.setWindowTitle(offer.title)
         box.setText(offer.message)
-        optimize_btn = box.addButton(
-            "Optimize and serve", QMessageBox.ButtonRole.AcceptRole
-        )
-        plain_btn = box.addButton(
-            "Serve without optimizing", QMessageBox.ButtonRole.ActionRole
-        )
+        optimize_btn = box.addButton("Optimize and serve", QMessageBox.ButtonRole.AcceptRole)
+        plain_btn = box.addButton("Serve without optimizing", QMessageBox.ButtonRole.ActionRole)
         box.addButton("Not now", QMessageBox.ButtonRole.RejectRole)
         box.exec()
         clicked = box.clickedButton()
         if clicked is optimize_btn:
-            self.tabs.setCurrentWidget(self.inference_tab)
+            self._navigate_to("inference")
             self._start_serve(model_path, optimize=True)
         elif clicked is plain_btn:
-            self.tabs.setCurrentWidget(self.inference_tab)
+            self._navigate_to("inference")
             self._start_serve(model_path, optimize=False)
 
     def _serve_queued_model(self, optimize: bool) -> None:
@@ -479,6 +479,7 @@ class MainWindow(QMainWindow):
         self._save_config()
         self._append_log("Starting local inference server on port 1234")
         self.status_label.setText("Starting server")
+        self.log_drawer.show()
         self._serve_worker = ServeWorker(
             self.config, model_path, optimize=optimize, plan_dir=plan_dir, parent=self
         )
@@ -491,10 +492,7 @@ class MainWindow(QMainWindow):
         self.inference_tab._load_config()
         self.deployment_tab.reload_from_config()
         detail = f"{status.backend} / {status.engine} on {status.target.replace('_', ' ')}"
-        if status.optimized:
-            detail += " (optimized)"
-        else:
-            detail += " (not optimized)"
+        detail += " (optimized)" if status.optimized else " (not optimized)"
         self.inference_tab.set_serve_status(status.url, detail)
         self.status_label.setText(f"Serving :{status.port}")
         self._append_log(f"Model is serving at {status.url}")
@@ -502,7 +500,7 @@ class MainWindow(QMainWindow):
 
     def _on_serve_failed(self, error: str) -> None:
         self.inference_tab.set_serve_status("", f"Serve failed: {error}")
-        self.status_label.setText("Serve failed")
+        self.status_label.setText("Failed")
         self._append_log(f"Serve failed: {error}")
         QMessageBox.warning(self, "Serve failed", error)
 
@@ -519,7 +517,7 @@ class MainWindow(QMainWindow):
             reply = QMessageBox.question(
                 self,
                 "Run in progress",
-                "A training run is in progress. Cancel and exit?",
+                "A run is in progress. Cancel and exit?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply != QMessageBox.StandardButton.Yes:

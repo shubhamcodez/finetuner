@@ -16,6 +16,11 @@ class SystemStats:
     gpu_mem_used_gb: float = 0.0
     gpu_mem_total_gb: float = 0.0
     gpu_temp_c: float = 0.0
+    npu_available: bool = False
+    npu_name: str = ""
+    npu_util_percent: float = 0.0
+    npu_mem_used_gb: float = 0.0
+    npu_mem_shared_gb: float = 0.0
 
 
 class StatsCollector:
@@ -85,6 +90,14 @@ class StatsCollector:
                     stats.gpu_temp_c = 0.0
             except Exception:
                 stats.gpu_available = False
+        from finetuner.monitor.npu import NpuCollector
+
+        npu = NpuCollector.collect()
+        stats.npu_available = npu.available
+        stats.npu_name = npu.name
+        stats.npu_util_percent = npu.util_percent
+        stats.npu_mem_used_gb = npu.mem_used_gb
+        stats.npu_mem_shared_gb = npu.mem_shared_gb
         return stats
 
 
@@ -109,3 +122,6 @@ class StatsPoller(QObject):
     def stop(self) -> None:
         self._timer.stop()
         StatsCollector.shutdown_nvml()
+        from finetuner.monitor.npu import NpuCollector
+
+        NpuCollector.shutdown()

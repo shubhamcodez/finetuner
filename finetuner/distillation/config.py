@@ -60,9 +60,9 @@ class DistillationConfig:
     def validate(self) -> list[str]:
         errors = self.domain.validate()
         if not self.teacher_model.strip():
-            errors.append("teacher model is required")
+            errors.append("Select a teacher model to continue.")
         if not self.student_model.strip():
-            errors.append("student model is required")
+            errors.append("Select a student model to continue.")
         if self.teacher_model.strip() == self.student_model.strip():
             errors.append("teacher and student models must be different")
         try:

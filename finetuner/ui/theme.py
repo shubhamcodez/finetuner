@@ -1,343 +1,429 @@
-"""Matte black theme for Finetuner."""
+"""Design tokens and stylesheet for the research workbench."""
 
 from __future__ import annotations
 
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication
 
+from finetuner.ui.fonts import application_font, load_application_fonts
 
+
+class Token:
+    BG = "#0B0D10"
+    SIDEBAR = "#101319"
+    SURFACE = "#12161C"
+    SURFACE_2 = "#161B22"
+    HOVER = "#1A2029"
+    INPUT = "#0F1318"
+    BORDER = "#252B35"
+    BORDER_SUBTLE = "#1D232C"
+    BORDER_INPUT = "#29303A"
+    TEXT = "#F4F6F8"
+    TEXT_SECONDARY = "#A7AFBC"
+    TEXT_TERTIARY = "#707986"
+    TEXT_DISABLED = "#555D68"
+    ACCENT = "#5B8DEF"
+    ACCENT_HOVER = "#6C9AFF"
+    ACCENT_PRESSED = "#497BDD"
+    ACCENT_SUBTLE = "rgba(91, 141, 239, 0.10)"
+    ACCENT_BORDER = "rgba(91, 141, 239, 0.28)"
+    SUCCESS = "#36B37E"
+    WARNING = "#E7A93B"
+    ERROR = "#E05D68"
+    RADIUS_INPUT = "8px"
+    RADIUS_BUTTON = "8px"
+    RADIUS_CARD = "10px"
+    RADIUS_PANEL = "12px"
+    SPACE_1 = "4px"
+    SPACE_2 = "8px"
+    SPACE_3 = "12px"
+    SPACE_4 = "16px"
+    SPACE_5 = "24px"
+    SPACE_6 = "32px"
+    FONT = "Inter"
+
+
+# Back-compat names used by charts and older widgets.
 class Theme:
-    # Matte black palette
-    BG = "#0C0C0E"
-    SURFACE = "#161618"
-    SURFACE_ALT = "#1E1E22"
-    SURFACE_RAISED = "#242428"
-    BORDER = "#2C2C32"
-    BORDER_STRONG = "#3A3A42"
-    TEXT = "#ECECF0"
-    TEXT_SECONDARY = "#9898A6"
-    TEXT_MUTED = "#6E6E7A"
-    PRIMARY = "#6B9FFF"
-    PRIMARY_HOVER = "#5590F7"
-    PRIMARY_LIGHT = "#1A2740"
-    PRIMARY_BORDER = "#3D5A8C"
-    SUCCESS = "#5EEAD4"
-    SUCCESS_BG = "#122820"
-    SUCCESS_BORDER = "#1E4038"
-    SUCCESS_TEXT = "#8FF0D4"
-    WARNING = "#FBBF24"
-    DANGER = "#F87171"
-    ACCENT = "#6B9FFF"
-    CHART_LINE = "#6B9FFF"
-    CHART_GRID = "#2C2C32"
-    LOG_BG = "#08080A"
-    LOG_TEXT = "#B4B4BE"
-    FONT_FAMILY = "Segoe UI"
+    BG = Token.BG
+    SURFACE = Token.SURFACE
+    SURFACE_ALT = Token.SURFACE_2
+    SURFACE_RAISED = Token.HOVER
+    BORDER = Token.BORDER
+    BORDER_STRONG = Token.BORDER
+    TEXT = Token.TEXT
+    TEXT_SECONDARY = Token.TEXT_SECONDARY
+    TEXT_MUTED = Token.TEXT_TERTIARY
+    PRIMARY = Token.ACCENT
+    PRIMARY_HOVER = Token.ACCENT_HOVER
+    PRIMARY_LIGHT = Token.ACCENT_SUBTLE
+    PRIMARY_BORDER = Token.ACCENT_BORDER
+    SUCCESS = Token.SUCCESS
+    SUCCESS_BG = Token.ACCENT_SUBTLE
+    SUCCESS_BORDER = Token.BORDER
+    SUCCESS_TEXT = Token.TEXT_SECONDARY
+    WARNING = Token.WARNING
+    DANGER = Token.ERROR
+    ACCENT = Token.ACCENT
+    CHART_LINE = Token.ACCENT
+    CHART_GRID = Token.BORDER
+    LOG_BG = Token.INPUT
+    LOG_TEXT = Token.TEXT_SECONDARY
+    FONT_FAMILY = Token.FONT
 
 
-STYLESHEET = f"""
+def _sheet(font: str) -> str:
+    t = Token
+    return f"""
 QMainWindow, QWidget {{
-    background-color: {Theme.BG};
-    color: {Theme.TEXT};
-    font-family: "{Theme.FONT_FAMILY}", "Inter", sans-serif;
+    background-color: {t.BG};
+    color: {t.TEXT};
+    font-family: "{font}";
+    font-size: 14px;
+    font-weight: 400;
+}}
+
+#AppShell {{
+    background-color: {t.BG};
+}}
+#Sidebar {{
+    background-color: {t.SIDEBAR};
+    border-right: 1px solid {t.BORDER_SUBTLE};
+}}
+#SidebarBrand {{
+    background: transparent;
+    color: {t.TEXT};
+    font-size: 15px;
+    font-weight: 600;
+}}
+#SidebarCaption {{
+    color: {t.TEXT_TERTIARY};
+    font-size: 12px;
+}}
+QPushButton#NavItem {{
+    background: transparent;
+    color: {t.TEXT_SECONDARY};
+    border: none;
+    border-radius: {t.RADIUS_INPUT};
+    text-align: left;
+    padding: 0 12px;
+    min-height: 40px;
+    max-height: 40px;
+    font-size: 13px;
+    font-weight: 400;
+}}
+QPushButton#NavItem:hover {{
+    background-color: {t.HOVER};
+    color: {t.TEXT};
+}}
+QPushButton#NavItem[selected="true"] {{
+    background-color: {t.ACCENT_SUBTLE};
+    color: {t.TEXT};
+    font-weight: 600;
+}}
+QPushButton#IconButton {{
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: {t.RADIUS_INPUT};
+    min-width: 36px;
+    max-width: 36px;
+    min-height: 36px;
+    max-height: 36px;
+    color: {t.TEXT_SECONDARY};
+}}
+QPushButton#IconButton:hover {{
+    background-color: {t.HOVER};
+    border-color: {t.BORDER};
+    color: {t.TEXT};
+}}
+
+#Eyebrow {{
+    color: {t.TEXT_TERTIARY};
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+}}
+#PageTitle {{
+    color: {t.TEXT};
+    font-size: 28px;
+    font-weight: 600;
+}}
+#PageSubtitle {{
+    color: {t.TEXT_SECONDARY};
+    font-size: 14px;
+    font-weight: 400;
+}}
+#SectionTitle {{
+    color: {t.TEXT};
+    font-size: 18px;
+    font-weight: 600;
+}}
+#CardTitle {{
+    color: {t.TEXT};
+    font-size: 15px;
+    font-weight: 600;
+}}
+#MetaLabel {{
+    color: {t.TEXT_TERTIARY};
     font-size: 12px;
 }}
 
-#AppHeader {{
-    background-color: {Theme.SURFACE};
-    border-bottom: 1px solid {Theme.BORDER};
+#SurfaceCard, #ToolCard, #StepCard {{
+    background-color: {t.SURFACE};
+    border: 1px solid {t.BORDER};
+    border-radius: {t.RADIUS_CARD};
 }}
-#AppLogo {{
-    background: transparent;
-    padding: 0;
-    margin: 0;
+#ToolCard:hover, #StepCard:hover {{
+    background-color: {t.HOVER};
+    border-color: {t.ACCENT_BORDER};
 }}
-#AppTitle {{
-    font-size: 15px;
+#StepCard[current="true"] {{
+    border-color: {t.ACCENT_BORDER};
+    background-color: {t.ACCENT_SUBTLE};
+}}
+#StepNumber {{
+    color: {t.ACCENT};
+    font-size: 12px;
     font-weight: 600;
-    color: {Theme.TEXT};
-    padding: 0;
-    margin: 0;
-}}
-#AppSubtitle {{
-    font-size: 11px;
-    color: {Theme.TEXT_SECONDARY};
-    padding: 0;
-    margin: 0;
-}}
-#StatusBadge {{
-    background-color: {Theme.SURFACE_ALT};
-    border: 1px solid {Theme.BORDER_STRONG};
-    border-radius: 10px;
-    padding: 3px 10px;
-    color: {Theme.TEXT_SECONDARY};
-    font-size: 11px;
-    font-weight: 500;
-}}
-
-QTabWidget::pane {{
-    border: 1px solid {Theme.BORDER};
-    border-radius: 6px;
-    background: {Theme.SURFACE};
-    top: -1px;
-    padding: 2px;
-}}
-QTabBar::tab {{
     background: transparent;
-    color: {Theme.TEXT_MUTED};
     border: none;
-    border-bottom: 2px solid transparent;
-    padding: 6px 14px;
-    margin-right: 2px;
-    font-weight: 500;
-    min-width: 72px;
-}}
-QTabBar::tab:selected {{
-    color: {Theme.PRIMARY};
-    border-bottom: 2px solid {Theme.PRIMARY};
-    background: transparent;
-}}
-QTabBar::tab:hover:!selected {{
-    color: {Theme.TEXT};
-    background: {Theme.SURFACE_ALT};
-    border-radius: 6px 6px 0 0;
 }}
 
 QGroupBox {{
-    background-color: {Theme.SURFACE};
-    border: 1px solid {Theme.BORDER};
-    border-radius: 8px;
-    margin-top: 8px;
-    padding: 10px 10px 8px 10px;
+    background-color: {t.SURFACE};
+    border: 1px solid {t.BORDER};
+    border-radius: {t.RADIUS_CARD};
+    margin-top: 12px;
+    padding: 20px 20px 16px 20px;
+    font-size: 15px;
     font-weight: 600;
-    color: {Theme.TEXT};
+    color: {t.TEXT};
 }}
 QGroupBox::title {{
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    left: 10px;
+    left: 16px;
     padding: 0 6px;
-    color: {Theme.TEXT_SECONDARY};
-    font-size: 11px;
+    color: {t.TEXT_SECONDARY};
+    font-size: 13px;
     font-weight: 600;
 }}
 
 QPushButton {{
-    background-color: {Theme.SURFACE_ALT};
-    color: {Theme.TEXT};
-    border: 1px solid {Theme.BORDER_STRONG};
-    border-radius: 6px;
-    padding: 4px 12px;
-    font-weight: 500;
-    min-height: 14px;
-}}
-QPushButton:hover {{
-    background-color: {Theme.SURFACE_RAISED};
-    border-color: {Theme.TEXT_MUTED};
-}}
-QPushButton:pressed {{
-    background-color: {Theme.BORDER};
-}}
-QPushButton:disabled {{
-    color: {Theme.TEXT_MUTED};
-    background-color: {Theme.SURFACE};
-    border-color: {Theme.BORDER};
-}}
-QPushButton#PrimaryButton {{
-    background-color: {Theme.PRIMARY};
-    color: #0C0C0E;
-    border: 1px solid {Theme.PRIMARY};
+    background-color: {t.SURFACE};
+    color: {t.TEXT};
+    border: 1px solid {t.BORDER};
+    border-radius: {t.RADIUS_BUTTON};
+    padding: 0 14px;
+    min-height: 36px;
+    font-size: 13px;
     font-weight: 600;
 }}
+QPushButton:hover {{
+    background-color: {t.HOVER};
+    border-color: #303845;
+}}
+QPushButton:pressed {{
+    background-color: {t.SURFACE_2};
+}}
+QPushButton:disabled {{
+    color: {t.TEXT_DISABLED};
+    background-color: {t.SURFACE};
+    border-color: {t.BORDER_SUBTLE};
+}}
+QPushButton#PrimaryButton {{
+    background-color: {t.ACCENT};
+    color: #FFFFFF;
+    border: 1px solid {t.ACCENT};
+}}
 QPushButton#PrimaryButton:hover {{
-    background-color: {Theme.PRIMARY_HOVER};
-    border-color: {Theme.PRIMARY_HOVER};
-    color: #0C0C0E;
+    background-color: {t.ACCENT_HOVER};
+    border-color: {t.ACCENT_HOVER};
+    color: #FFFFFF;
+}}
+QPushButton#PrimaryButton:pressed {{
+    background-color: {t.ACCENT_PRESSED};
+    border-color: {t.ACCENT_PRESSED};
 }}
 QPushButton#PrimaryButton:disabled {{
-    background-color: {Theme.PRIMARY_BORDER};
-    border-color: {Theme.PRIMARY_BORDER};
-    color: {Theme.TEXT_MUTED};
+    background-color: {t.ACCENT_BORDER};
+    border-color: {t.ACCENT_BORDER};
+    color: {t.TEXT_SECONDARY};
 }}
 QPushButton#SecondaryButton {{
-    background-color: transparent;
-    color: {Theme.TEXT_SECONDARY};
-    border: 1px solid {Theme.BORDER_STRONG};
+    background-color: {t.SURFACE};
+    color: {t.TEXT};
+    border: 1px solid {t.BORDER};
+}}
+QPushButton#GhostButton {{
+    background: transparent;
+    color: {t.TEXT_SECONDARY};
+    border: 1px solid transparent;
+}}
+QPushButton#GhostButton:hover {{
+    background-color: {t.HOVER};
+    color: {t.TEXT};
+}}
+QPushButton#DangerButton {{
+    background: transparent;
+    color: {t.ERROR};
+    border: 1px solid {t.ERROR};
 }}
 
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit {{
-    background-color: {Theme.SURFACE_ALT};
-    border: 1px solid {Theme.BORDER_STRONG};
-    border-radius: 6px;
-    padding: 4px 8px;
-    color: {Theme.TEXT};
-    min-height: 14px;
-    selection-background-color: {Theme.PRIMARY_LIGHT};
-    selection-color: {Theme.TEXT};
+    background-color: {t.INPUT};
+    border: 1px solid {t.BORDER_INPUT};
+    border-radius: {t.RADIUS_INPUT};
+    padding: 0 10px;
+    color: {t.TEXT};
+    min-height: 40px;
+    font-size: 14px;
+    selection-background-color: {t.ACCENT_SUBTLE};
+    selection-color: {t.TEXT};
+}}
+QPlainTextEdit {{
+    padding: 10px;
 }}
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus {{
-    border: 1px solid {Theme.PRIMARY};
+    border: 1px solid {t.ACCENT};
 }}
 QComboBox::drop-down {{
     border: none;
     width: 24px;
 }}
 QComboBox QAbstractItemView {{
-    background-color: {Theme.SURFACE_ALT};
-    color: {Theme.TEXT};
-    border: 1px solid {Theme.BORDER_STRONG};
-    selection-background-color: {Theme.PRIMARY_LIGHT};
-}}
-QSpinBox::up-button, QSpinBox::down-button,
-QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
-    border: none;
-    background: transparent;
-    width: 18px;
+    background-color: {t.SURFACE};
+    color: {t.TEXT};
+    border: 1px solid {t.BORDER};
+    selection-background-color: {t.ACCENT_SUBTLE};
+    outline: none;
 }}
 
 QListWidget {{
-    background-color: {Theme.SURFACE_ALT};
-    border: 1px solid {Theme.BORDER};
-    border-radius: 6px;
-    padding: 2px;
+    background-color: {t.SURFACE};
+    border: 1px solid {t.BORDER};
+    border-radius: {t.RADIUS_CARD};
     outline: none;
 }}
 QListWidget::item {{
-    border-radius: 4px;
-    padding: 4px 8px;
-    margin: 1px 0;
-    color: {Theme.TEXT};
+    padding: 8px 12px;
+    color: {t.TEXT};
 }}
 QListWidget::item:selected {{
-    background-color: {Theme.PRIMARY_LIGHT};
-    color: {Theme.PRIMARY};
-    border: 1px solid {Theme.PRIMARY_BORDER};
-}}
-QListWidget::item:hover:!selected {{
-    background-color: {Theme.SURFACE_RAISED};
+    background-color: {t.ACCENT_SUBTLE};
+    color: {t.TEXT};
 }}
 
 QTableWidget {{
-    background-color: {Theme.SURFACE_ALT};
-    border: 1px solid {Theme.BORDER};
-    border-radius: 8px;
-    gridline-color: {Theme.BORDER};
-    selection-background-color: {Theme.PRIMARY_LIGHT};
-    selection-color: {Theme.PRIMARY};
-    alternate-background-color: {Theme.SURFACE};
+    background-color: {t.SURFACE};
+    border: 1px solid {t.BORDER};
+    border-radius: {t.RADIUS_CARD};
+    gridline-color: {t.BORDER_SUBTLE};
+    selection-background-color: {t.ACCENT_SUBTLE};
+    selection-color: {t.TEXT};
+    alternate-background-color: {t.SURFACE};
     outline: none;
+    font-size: 13px;
 }}
 QTableWidget::item {{
-    padding: 4px 6px;
-    color: {Theme.TEXT};
+    padding: 8px 10px;
+    color: {t.TEXT};
+    border-bottom: 1px solid {t.BORDER_SUBTLE};
 }}
 QHeaderView::section {{
-    background-color: {Theme.SURFACE};
-    color: {Theme.TEXT_SECONDARY};
+    background-color: {t.SURFACE_2};
+    color: {t.TEXT_SECONDARY};
     border: none;
-    border-bottom: 1px solid {Theme.BORDER};
-    border-right: 1px solid {Theme.BORDER};
-    padding: 5px 6px;
+    border-bottom: 1px solid {t.BORDER};
+    padding: 10px;
+    font-size: 12px;
     font-weight: 600;
-    font-size: 11px;
 }}
 
 QCheckBox {{
-    spacing: 6px;
-    color: {Theme.TEXT};
+    spacing: 8px;
+    color: {t.TEXT};
+    font-size: 13px;
 }}
 QCheckBox::indicator {{
-    width: 15px;
-    height: 15px;
+    width: 16px;
+    height: 16px;
     border-radius: 4px;
-    border: 1px solid {Theme.BORDER_STRONG};
-    background: {Theme.SURFACE_ALT};
+    border: 1px solid {t.BORDER_INPUT};
+    background: {t.INPUT};
 }}
 QCheckBox::indicator:checked {{
-    background-color: {Theme.PRIMARY};
-    border-color: {Theme.PRIMARY};
+    background-color: {t.ACCENT};
+    border-color: {t.ACCENT};
 }}
 
 QProgressBar {{
-    background-color: {Theme.SURFACE_ALT};
-    border: 1px solid {Theme.BORDER};
+    background-color: {t.SURFACE_2};
+    border: 1px solid {t.BORDER_SUBTLE};
     border-radius: 4px;
-    height: 8px;
-    max-height: 8px;
+    height: 6px;
+    max-height: 6px;
     text-align: center;
-    color: {Theme.TEXT_SECONDARY};
-    font-size: 10px;
+    color: {t.TEXT_TERTIARY};
+    font-size: 11px;
 }}
 QProgressBar::chunk {{
-    background-color: {Theme.PRIMARY};
-    border-radius: 5px;
+    background-color: {t.ACCENT};
+    border-radius: 4px;
 }}
 
 #LogConsole {{
-    background-color: {Theme.LOG_BG};
-    color: {Theme.LOG_TEXT};
-    border: 1px solid {Theme.BORDER};
-    border-radius: 6px;
-    padding: 6px;
-    font-family: "Cascadia Code", "Consolas", monospace;
-    font-size: 11px;
-    selection-background-color: {Theme.PRIMARY_LIGHT};
-}}
-#LogPanel {{
-    background-color: {Theme.SURFACE};
-    border: 1px solid {Theme.BORDER};
-    border-radius: 8px;
-}}
-#LogPanelTitle {{
-    font-size: 11px;
-    font-weight: 600;
-    color: {Theme.TEXT_MUTED};
-    letter-spacing: 0.3px;
-}}
-
-QLabel {{
-    color: {Theme.TEXT};
-    background: transparent;
+    background-color: {t.INPUT};
+    color: {t.TEXT_SECONDARY};
+    border: 1px solid {t.BORDER};
+    border-radius: {t.RADIUS_CARD};
+    padding: 10px;
+    font-family: "Cascadia Code", "SF Mono", "Consolas", monospace;
+    font-size: 12px;
 }}
 #HintLabel, #MutedLabel {{
-    color: {Theme.TEXT_SECONDARY};
-    font-size: 11px;
+    color: {t.TEXT_SECONDARY};
+    font-size: 13px;
+    font-weight: 400;
 }}
 #MetricValue {{
     font-size: 20px;
     font-weight: 600;
-    color: {Theme.TEXT};
+    color: {t.TEXT};
 }}
 #MetricDetail {{
-    font-size: 11px;
-    color: {Theme.TEXT_SECONDARY};
+    font-size: 12px;
+    color: {t.TEXT_SECONDARY};
 }}
 #SummaryBanner {{
-    background-color: {Theme.SUCCESS_BG};
-    border: 1px solid {Theme.SUCCESS_BORDER};
-    border-radius: 6px;
-    padding: 6px 10px;
-    color: {Theme.SUCCESS_TEXT};
-    font-weight: 500;
-    font-size: 11px;
+    background-color: {t.SURFACE};
+    border: 1px solid {t.BORDER};
+    border-radius: {t.RADIUS_CARD};
+    padding: 16px 20px;
+    color: {t.TEXT_SECONDARY};
+    font-size: 13px;
 }}
 #PipelineContext {{
-    background-color: {Theme.SURFACE_ALT};
-    border: 1px solid {Theme.BORDER};
-    border-radius: 6px;
-}}
-QPushButton#ContextButton {{
     background: transparent;
     border: none;
-    color: {Theme.PRIMARY};
-    padding: 2px 6px;
-    min-height: 12px;
 }}
-QPushButton#ContextButton:hover {{
-    color: {Theme.TEXT};
-    background-color: {Theme.SURFACE_RAISED};
+#StatusBadge {{
+    background-color: {t.ACCENT_SUBTLE};
+    border: 1px solid {t.ACCENT_BORDER};
+    border-radius: 999px;
+    padding: 4px 10px;
+    color: {t.TEXT};
+    font-size: 12px;
+    font-weight: 600;
 }}
-
+#AdvancedToggle {{
+    background: transparent;
+    border: none;
+    color: {t.TEXT_SECONDARY};
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 0;
+}}
 QScrollArea {{
     border: none;
     background: transparent;
@@ -348,74 +434,59 @@ QScrollBar:vertical {{
     margin: 4px;
 }}
 QScrollBar::handle:vertical {{
-    background: {Theme.BORDER_STRONG};
+    background: {t.BORDER};
     border-radius: 5px;
     min-height: 24px;
-}}
-QScrollBar::handle:vertical:hover {{
-    background: {Theme.TEXT_MUTED};
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0;
 }}
-QScrollBar:horizontal {{
-    background: transparent;
-    height: 10px;
-}}
-QScrollBar::handle:horizontal {{
-    background: {Theme.BORDER_STRONG};
-    border-radius: 5px;
-}}
-
 QSplitter::handle {{
-    background: {Theme.BORDER};
-    height: 3px;
+    background: {t.BORDER_SUBTLE};
 }}
-QSplitter::handle:hover {{
-    background: {Theme.PRIMARY};
-}}
-
-QDialog {{
-    background-color: {Theme.SURFACE};
-}}
-QMessageBox {{
-    background-color: {Theme.SURFACE};
+QDialog, QMessageBox {{
+    background-color: {t.SURFACE};
 }}
 QToolTip {{
-    background-color: {Theme.SURFACE_RAISED};
-    color: {Theme.TEXT};
-    border: 1px solid {Theme.BORDER_STRONG};
+    background-color: {t.SURFACE_2};
+    color: {t.TEXT};
+    border: 1px solid {t.BORDER};
     padding: 6px 8px;
 }}
 """
 
 
+STYLESHEET = ""
+
+
 def apply_theme(app: QApplication) -> None:
+    family = load_application_fonts()
+    Token.FONT = family
+    Theme.FONT_FAMILY = family
+    global STYLESHEET
+    STYLESHEET = _sheet(family)
     app.setStyle("Fusion")
     app.setStyleSheet(STYLESHEET)
-
-    font = QFont(Theme.FONT_FAMILY, 9)
-    font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
-    app.setFont(font)
+    app.setFont(application_font(family, 10, QFont.Weight.Normal))
 
     palette = QPalette()
-    palette.setColor(QPalette.ColorRole.Window, QColor(Theme.BG))
-    palette.setColor(QPalette.ColorRole.WindowText, QColor(Theme.TEXT))
-    palette.setColor(QPalette.ColorRole.Base, QColor(Theme.SURFACE_ALT))
-    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(Theme.SURFACE))
-    palette.setColor(QPalette.ColorRole.Text, QColor(Theme.TEXT))
-    palette.setColor(QPalette.ColorRole.Button, QColor(Theme.SURFACE_ALT))
-    palette.setColor(QPalette.ColorRole.ButtonText, QColor(Theme.TEXT))
-    palette.setColor(QPalette.ColorRole.Highlight, QColor(Theme.PRIMARY))
-    palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#0C0C0E"))
-    palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(Theme.TEXT_MUTED))
+    palette.setColor(QPalette.ColorRole.Window, QColor(Token.BG))
+    palette.setColor(QPalette.ColorRole.WindowText, QColor(Token.TEXT))
+    palette.setColor(QPalette.ColorRole.Base, QColor(Token.INPUT))
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(Token.SURFACE))
+    palette.setColor(QPalette.ColorRole.Text, QColor(Token.TEXT))
+    palette.setColor(QPalette.ColorRole.Button, QColor(Token.SURFACE))
+    palette.setColor(QPalette.ColorRole.ButtonText, QColor(Token.TEXT))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(Token.ACCENT))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#FFFFFF"))
+    palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(Token.TEXT_TERTIARY))
     app.setPalette(palette)
 
 
 def chart_colors() -> dict[str, str]:
     return {
-        "line": Theme.CHART_LINE,
-        "grid": Theme.CHART_GRID,
-        "label": Theme.TEXT_SECONDARY,
-        "background": Theme.SURFACE,
+        "line": Token.ACCENT,
+        "grid": Token.BORDER,
+        "label": Token.TEXT_SECONDARY,
+        "background": Token.SURFACE,
     }

@@ -15,7 +15,7 @@ def test_default_training_config_is_valid_without_models_or_data():
 
 
 def test_distillation_reports_missing_model_choices_before_execution():
-    with pytest.raises(PreflightError, match="teacher model is required"):
+    with pytest.raises(PreflightError, match="Select a teacher model"):
         validate_action(ProjectConfig(), ActionKind.DISTILL)
 
 

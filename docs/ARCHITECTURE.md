@@ -50,3 +50,6 @@ inference optimization.
   distributed checkpoints remain future work.
 - Run manifests are local provenance records, not a substitute for an external experiment tracker,
   artifact registry, access-control service, or audit-log sink.
+- Windows packaging is native-architecture only. `scripts/build_windows.ps1` freezes the host
+  (x64 or ARM64) with PyInstaller and compiles `Finetuner-Setup-<arch>.exe`. A universal installer
+  is a picker over both payloads, not a cross-compiled binary. 32-bit Windows is rejected.

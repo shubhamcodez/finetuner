@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
 
 
 class ToolRunBar(QFrame):
-    """Start this tool by itself; it does not wait on other pages."""
+    """Primary action for a tool page."""
 
     run_requested = Signal()
 
@@ -13,9 +13,9 @@ class ToolRunBar(QFrame):
         super().__init__(parent)
         self.setObjectName("PipelineContext")
         row = QHBoxLayout(self)
-        row.setContentsMargins(8, 3, 4, 3)
-        row.setSpacing(6)
-        self.label = QLabel("Runs independently. Uses this page's settings.")
+        row.setContentsMargins(0, 0, 0, 8)
+        row.setSpacing(12)
+        self.label = QLabel("Uses this page's settings. Other tools keep running independently.")
         self.label.setObjectName("MutedLabel")
         row.addWidget(self.label, 1)
         self.button = QPushButton(action_label)

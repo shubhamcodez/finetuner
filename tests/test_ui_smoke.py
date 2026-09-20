@@ -4,10 +4,12 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from finetuner.core.job import ModelRunResult, ProjectConfig
+from finetuner.monitor.stats import SystemStats
 from finetuner.ui.analysis_tab import AnalysisTab
 from finetuner.ui.deployment_tab import DeploymentTab
 from finetuner.ui.distillation_tab import DistillationTab
 from finetuner.ui.inference_tab import InferenceTab
+from finetuner.ui.monitor_tab import MonitorTab
 from finetuner.ui.project_tab import ProjectTab
 from finetuner.ui.results_tab import ResultsTab
 from finetuner.ui.training_tab import TrainingTab
@@ -78,3 +80,24 @@ def test_distillation_selectors_include_downloaded_models(app, monkeypatch, tmp_
 
     tab.teacher.setCurrentIndex(teacher_index)
     assert config.distillation.teacher_model == str(model_path)
+
+
+@pytest.mark.ui
+def test_system_tab_renders_npu_stats(app):
+    tab = MonitorTab()
+    tab._on_stats(
+        SystemStats(
+            cpu_percent=10.0,
+            ram_used_gb=8.0,
+            ram_total_gb=16.0,
+            npu_available=True,
+            npu_name="Qualcomm Hexagon NPU",
+            npu_util_percent=42.0,
+            npu_mem_used_gb=0.7,
+            npu_mem_shared_gb=0.2,
+        )
+    )
+    assert "42" in tab.npu_card.value_label.text()
+    assert "Hexagon" in tab.npu_card.detail_label.text()
+    assert "0.7" in tab.npu_mem_card.value_label.text()
+    tab.shutdown()

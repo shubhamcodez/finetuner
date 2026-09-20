@@ -6,6 +6,7 @@ from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
+    QFrame,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -111,9 +112,34 @@ class MonitorTab(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
 
-        intro = QLabel("Live CPU, RAM, and GPU metrics.")
+        intro = QLabel("Live CPU, RAM, GPU, and NPU metrics.")
         intro.setObjectName("HintLabel")
         layout.addWidget(intro)
+
+        health = QFrame()
+        health.setObjectName("SurfaceCard")
+        health_layout = QVBoxLayout(health)
+        health_layout.setContentsMargins(20, 16, 20, 16)
+        health_layout.setSpacing(10)
+        self.health_rows = {}
+        for key, label in (
+            ("compute", "Compute"),
+            ("storage", "Storage"),
+            ("models", "Model registry"),
+            ("jobs", "Job scheduler"),
+            ("services", "Local services"),
+        ):
+            row = QHBoxLayout()
+            name = QLabel(label)
+            name.setObjectName("CardTitle")
+            state = QLabel("Healthy")
+            state.setObjectName("MetaLabel")
+            row.addWidget(name)
+            row.addStretch()
+            row.addWidget(state)
+            health_layout.addLayout(row)
+            self.health_rows[key] = state
+        layout.addWidget(health)
 
         cards = QGridLayout()
         cards.setSpacing(8)
@@ -121,24 +147,34 @@ class MonitorTab(QWidget):
         self.ram_card = MetricCard("System Memory")
         self.gpu_card = MetricCard("GPU Utilization")
         self.vram_card = MetricCard("GPU Memory")
+        self.npu_card = MetricCard("NPU Utilization")
+        self.npu_mem_card = MetricCard("NPU Memory")
         cards.addWidget(self.cpu_card, 0, 0)
         cards.addWidget(self.ram_card, 0, 1)
         cards.addWidget(self.gpu_card, 1, 0)
         cards.addWidget(self.vram_card, 1, 1)
+        cards.addWidget(self.npu_card, 2, 0)
+        cards.addWidget(self.npu_mem_card, 2, 1)
         layout.addLayout(cards)
 
         charts = QHBoxLayout()
         charts.setSpacing(8)
         self.cpu_chart = HistoryChart("CPU History", y_max=100)
         self.gpu_chart = HistoryChart("GPU History", y_max=100)
+        self.npu_chart = HistoryChart("NPU History", y_max=100)
         charts.addWidget(self.cpu_chart)
         charts.addWidget(self.gpu_chart)
+        charts.addWidget(self.npu_chart)
         layout.addLayout(charts)
 
         self.gpu_status = QLabel("")
         self.gpu_status.setObjectName("MutedLabel")
         self.gpu_status.setWordWrap(True)
         layout.addWidget(self.gpu_status)
+        self.npu_status = QLabel("")
+        self.npu_status.setObjectName("MutedLabel")
+        self.npu_status.setWordWrap(True)
+        layout.addWidget(self.npu_status)
         layout.addStretch()
 
         scroll.setWidget(content)
@@ -171,6 +207,38 @@ class MonitorTab(QWidget):
             self.gpu_status.setText(
                 "GPU unavailable. Install NVIDIA drivers to enable CUDA fine-tuning."
             )
+
+        if stats.npu_available:
+            self.npu_card.set_value(
+                f"{stats.npu_util_percent:.0f}%",
+                stats.npu_name,
+            )
+            self.npu_chart.append(stats.npu_util_percent)
+            mem_detail = (
+                f"{stats.npu_mem_shared_gb:.1f} GB shared"
+                if stats.npu_mem_shared_gb
+                else "Windows adapter committed memory"
+            )
+            if stats.npu_mem_used_gb or stats.npu_mem_shared_gb:
+                self.npu_mem_card.set_value(f"{stats.npu_mem_used_gb:.1f} GB", mem_detail)
+            else:
+                self.npu_mem_card.set_value("—", mem_detail)
+            self.npu_status.setText(f"NPU active — {stats.npu_name or 'Windows NPU'}")
+        else:
+            self.npu_card.set_value("Unavailable", "No NPU detected")
+            self.npu_mem_card.set_value("—", "")
+            self.npu_status.setText(
+                "NPU unavailable. Qualcomm Hexagon and Intel NPUs appear here when Windows exposes them."
+            )
+
+        if "compute" in getattr(self, "health_rows", {}):
+            if stats.gpu_available:
+                compute = "Healthy"
+            elif stats.npu_available:
+                compute = "NPU"
+            else:
+                compute = "CPU only"
+            self.health_rows["compute"].setText(compute)
 
     def shutdown(self) -> None:
         self._poller.stop()

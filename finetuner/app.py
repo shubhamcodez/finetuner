@@ -23,7 +23,7 @@ def _make_splash() -> QSplashScreen:
         text_x = 40 + logo.width() + 16
 
     painter.setPen(QColor(Theme.TEXT))
-    painter.setFont(QFont(Theme.FONT_FAMILY, 22, QFont.Weight.DemiBold))
+    painter.setFont(QFont(Theme.FONT_FAMILY, 22, QFont.Weight.Bold))
     painter.drawText(text_x, 70, "Finetuner")
     painter.setPen(QColor(Theme.TEXT_SECONDARY))
     painter.setFont(QFont(Theme.FONT_FAMILY, 11))

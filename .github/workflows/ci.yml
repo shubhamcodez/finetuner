@@ -31,3 +31,19 @@ jobs:
         run: python -m ruff check finetuner tests
       - name: Unit tests
         run: python -m pytest -q
+
+  installer-scripts:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test runner
+        run: python -m pip install pytest
+      - name: Installer script tests
+        run: python -m pytest tests/test_installer.py -q
+      - name: Compile x64, ARM64, and universal Inno scripts
+        run: |
+          choco install innosetup -y --no-progress
+          pwsh -File scripts/verify_installer.ps1

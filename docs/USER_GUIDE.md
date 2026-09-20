@@ -39,7 +39,18 @@ To pin a desktop shortcut after the venv exists:
 .\scripts\create_desktop_shortcut.ps1
 ```
 
-A Windows installer can be built with `.\scripts\build_windows.ps1` (Inno Setup required for the installer step).
+Use the Windows installer that matches this PC: `Finetuner-Setup-x64.exe` on Intel/AMD,
+`Finetuner-Setup-arm64.exe` on Snapdragon / ARM64, or `Finetuner-Setup-universal.exe` if you
+have the combined package. The installer is per-user by default (`%LOCALAPPDATA%\Programs\Finetuner`)
+and does not require Administrator. To build it:
+
+```powershell
+.\scripts\build_windows.ps1              # native installer for this PC
+.\scripts\build_windows.ps1 -Universal   # after both x64 and arm64 payloads exist
+```
+
+Inno Setup 6.3+ is required for the `.exe` installer. The script also writes a portable zip
+under `dist\`. 32-bit Windows is not supported.
 
 ## Workspace
 
@@ -56,7 +67,7 @@ The window has a header status badge, product tabs, and a **Run Console** at the
 | **Deployment** | Quantize a queued model for a concrete backend and device. |
 | **Inference** | Detect device, optional optimize, then serve on port 1234. |
 | **Results** | Per-model scores and artifact links from the latest run. |
-| **System** | Live CPU, RAM, and NVIDIA GPU utilization. |
+| **System** | Live CPU, RAM, NVIDIA GPU, and NPU utilization. |
 
 Settings save automatically to `%LOCALAPPDATA%\.finetuner\config.json`. Hugging Face tokens are not written there; they stay in memory or come from `HF_TOKEN`.
 
@@ -310,7 +321,7 @@ There is no single kernel that is fastest on Hexagon, CUDA, and Apple GPU. The a
 
 **Results** compares the latest run across queued models: eval scores plus Policy / Analysis / Deployment / Inference readiness. Double-click a **Ready** cell to open that artifact (analysis plot or inference plan).
 
-**System** polls CPU, RAM, and NVIDIA GPU once per second so you can see whether a run is compute-bound or memory-bound.
+**System** polls CPU, RAM, NVIDIA GPU, and NPU once per second so you can see whether a run is compute-bound or memory-bound.
 
 ## Hardware pairing
 

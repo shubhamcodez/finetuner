@@ -49,8 +49,8 @@ def test_distillation_readiness_is_owned_by_the_distillation_tool():
     snapshot = build_project_snapshot(config)
     distillation = next(area for area in snapshot.areas if area.area_id == "distillation")
     assert not distillation.ready
-    assert "teacher model is required" in distillation.issues
-    assert "student model is required" in distillation.issues
+    assert "Select a teacher model to continue." in distillation.issues
+    assert "Select a student model to continue." in distillation.issues
 
 
 def test_deployment_and_inference_do_not_require_a_dataset():

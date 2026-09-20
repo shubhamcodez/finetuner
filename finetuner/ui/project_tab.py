@@ -4,11 +4,9 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QPushButton,
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
@@ -18,56 +16,63 @@ from PySide6.QtWidgets import (
 
 from finetuner.core.actions import ActionEvent
 from finetuner.core.job import ModelRunResult, ProjectConfig
-from finetuner.core.project_state import ProjectAreaState, build_project_snapshot
+from finetuner.core.project_state import build_project_snapshot
+from finetuner.ui.icons import line_icon
+from finetuner.ui.theme import Token
+
+_TOOLS = (
+    ("models", "Models", "models", "Queue Hugging Face and local checkpoints."),
+    ("training", "Train", "training", "Fine-tune a queued model on selected data."),
+    ("distillation", "Distill", "distillation", "Transfer a teacher into a smaller student."),
+    ("evals", "Evaluate", "evaluation", "Score models on shared benchmarks."),
+    ("analysis", "Analyze", "analysis", "Inspect representations and layer similarity."),
+    ("deployment", "Deploy", "deployment", "Quantize for a concrete backend and device."),
+    ("inference", "Optimize Inference", "inference", "Bind the strongest ready engine on port 1234."),
+)
+
+_STEPS = (
+    ("1", "Prepare data", "Choose a dataset and confirm the model queue."),
+    ("2", "Train model", "Run SFT or a preference method."),
+    ("3", "Evaluate", "Compare scores against the selected benchmarks."),
+    ("4", "Deploy", "Quantize, optimize, and serve."),
+)
 
 
-class ProjectAreaCard(QGroupBox):
-    navigate_requested = Signal(str)
-    run_requested = Signal(str)
+class ToolCard(QFrame):
+    clicked = Signal(str)
 
-    def __init__(self, area_id: str, parent=None) -> None:
+    def __init__(self, area: str, title: str, icon: str, body: str, parent=None) -> None:
         super().__init__(parent)
-        self.area_id = area_id
-        self._action = ""
-        layout = QGridLayout(self)
-        layout.setContentsMargins(8, 6, 8, 6)
-        layout.setHorizontalSpacing(8)
-        layout.setVerticalSpacing(2)
-        self.summary = QLabel()
-        self.summary.setWordWrap(True)
-        layout.addWidget(self.summary, 0, 0)
-        self.state = QLabel()
-        self.state.setObjectName("MutedLabel")
-        self.state.setWordWrap(True)
-        layout.addWidget(self.state, 1, 0)
-        buttons = QVBoxLayout()
-        self.configure = QPushButton("Open")
-        self.configure.setObjectName("SecondaryButton")
-        self.configure.clicked.connect(lambda: self.navigate_requested.emit(self.area_id))
-        self.run = QPushButton("Run")
-        self.run.setObjectName("PrimaryButton")
-        self.run.clicked.connect(lambda: self.run_requested.emit(self._action))
-        buttons.addWidget(self.configure)
-        buttons.addWidget(self.run)
-        layout.addLayout(buttons, 0, 1, 2, 1)
+        self.area = area
+        self.setObjectName("ToolCard")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(20, 20, 20, 20)
+        row.setSpacing(16)
+        mark = QLabel()
+        mark.setPixmap(line_icon(icon, Token.ACCENT, 20).pixmap(20, 20))
+        text = QVBoxLayout()
+        text.setSpacing(4)
+        name = QLabel(title)
+        name.setObjectName("CardTitle")
+        copy = QLabel(body)
+        copy.setObjectName("HintLabel")
+        copy.setWordWrap(True)
+        text.addWidget(name)
+        text.addWidget(copy)
+        chevron = QLabel()
+        chevron.setPixmap(line_icon("chevron", Token.TEXT_TERTIARY, 16).pixmap(16, 16))
+        row.addWidget(mark, 0, Qt.AlignmentFlag.AlignTop)
+        row.addLayout(text, 1)
+        row.addWidget(chevron, 0, Qt.AlignmentFlag.AlignVCenter)
 
-    def apply(self, area: ProjectAreaState, running: bool) -> None:
-        self.setTitle(area.title)
-        self.summary.setText(area.summary)
-        self._action = area.action
-        self.run.setVisible(bool(area.action))
-        self.run.setEnabled(bool(area.action) and area.ready and not running)
-        if area.ready:
-            self.state.setText("Ready to run" if area.action else "Ready")
-            self.configure.setText("Open")
-        else:
-            self.state.setText("Needs attention | " + "; ".join(area.issues))
-            self.configure.setText("Fix")
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.area)
+        super().mouseReleaseEvent(event)
 
 
 class ProjectTab(QWidget):
-    """Overview of independent tools that share queued models and optional data."""
-
     navigate_requested = Signal(str)
     run_requested = Signal(str)
 
@@ -76,7 +81,7 @@ class ProjectTab(QWidget):
         self.config = config
         self._running = False
         self._results: list[ModelRunResult] = []
-        self._cards: dict[str, ProjectAreaCard] = {}
+        self._cards: dict[str, ToolCard] = {}
         self._build_ui()
         self.refresh()
 
@@ -88,108 +93,108 @@ class ProjectTab(QWidget):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 32)
+        layout.setSpacing(24)
 
-        hero = QFrame()
-        hero.setObjectName("SummaryBanner")
-        hero_layout = QHBoxLayout(hero)
-        hero_text = QVBoxLayout()
-        self.title = QLabel()
-        self.title.setObjectName("LogPanelTitle")
-        hero_text.addWidget(self.title)
-        self.readiness = QLabel()
-        self.readiness.setWordWrap(True)
-        hero_text.addWidget(self.readiness)
-        hero_layout.addLayout(hero_text, 1)
-        layout.addWidget(hero)
+        workflow = QFrame()
+        workflow.setObjectName("SurfaceCard")
+        steps = QHBoxLayout(workflow)
+        steps.setContentsMargins(20, 16, 20, 16)
+        steps.setSpacing(0)
+        snapshot = build_project_snapshot(self.config)
+        current = _current_step(snapshot)
+        for index, (number, title, body) in enumerate(_STEPS):
+            cell = QVBoxLayout()
+            cell.setSpacing(4)
+            top = QHBoxLayout()
+            badge = QLabel(number)
+            badge.setObjectName("StepNumber")
+            heading = QLabel(title)
+            heading.setObjectName("CardTitle")
+            top.addWidget(badge)
+            top.addWidget(heading, 1)
+            copy = QLabel(body)
+            copy.setObjectName("MetaLabel")
+            copy.setWordWrap(True)
+            cell.addLayout(top)
+            cell.addWidget(copy)
+            wrap = QFrame()
+            wrap.setObjectName("StepCard")
+            wrap.setProperty("current", index == current)
+            inner = QVBoxLayout(wrap)
+            inner.setContentsMargins(12, 10, 12, 10)
+            inner.addLayout(cell)
+            steps.addWidget(wrap, 1)
+            if index < len(_STEPS) - 1:
+                arrow = QLabel("→")
+                arrow.setObjectName("MetaLabel")
+                arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                steps.addWidget(arrow)
+        layout.addWidget(workflow)
 
         section = QLabel("Tools")
-        section.setObjectName("LogPanelTitle")
+        section.setObjectName("SectionTitle")
         layout.addWidget(section)
         grid = QGridLayout()
-        for index, area_id in enumerate(
-            (
-                "models",
-                "training",
-                "distillation",
-                "evals",
-                "analysis",
-                "deployment",
-                "inference",
-            )
-        ):
-            card = ProjectAreaCard(area_id)
-            card.navigate_requested.connect(self.navigate_requested.emit)
-            card.run_requested.connect(self.run_requested.emit)
-            self._cards[area_id] = card
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(16)
+        for index, (area, title, icon, body) in enumerate(_TOOLS):
+            card = ToolCard(area, title, icon, body)
+            card.clicked.connect(self.navigate_requested.emit)
+            self._cards[area] = card
             grid.addWidget(card, index // 3, index % 3)
         layout.addLayout(grid)
 
-        status_header = QHBoxLayout()
-        status_title = QLabel("Current run")
-        status_title.setObjectName("LogPanelTitle")
-        status_header.addWidget(status_title)
-        status_header.addStretch()
+        run_header = QHBoxLayout()
+        run_title = QLabel("Current run")
+        run_title.setObjectName("SectionTitle")
+        run_header.addWidget(run_title)
+        run_header.addStretch()
         self.current_stage = QLabel("Not running")
         self.current_stage.setObjectName("MutedLabel")
-        status_header.addWidget(self.current_stage)
-        layout.addLayout(status_header)
+        run_header.addWidget(self.current_stage)
+        layout.addLayout(run_header)
 
-        outputs_header = QHBoxLayout()
-        outputs_title = QLabel("Latest outputs")
-        outputs_title.setObjectName("LogPanelTitle")
-        outputs_header.addWidget(outputs_title)
-        outputs_header.addStretch()
-        results_button = QPushButton("Open Results")
-        results_button.clicked.connect(lambda: self.navigate_requested.emit("results"))
-        outputs_header.addWidget(results_button)
-        layout.addLayout(outputs_header)
+        outputs_title = QLabel("Recent runs")
+        outputs_title.setObjectName("SectionTitle")
+        layout.addWidget(outputs_title)
+        self.empty = QLabel("No runs yet. Train a model to see runs and metrics here.")
+        self.empty.setObjectName("HintLabel")
+        layout.addWidget(self.empty)
         self.outputs = QTableWidget(0, 6)
         self.outputs.setHorizontalHeaderLabels(
-            ["Model", "Outcome", "Policy", "Analysis", "Deployment", "Inference"]
+            ["Name", "Outcome", "Policy", "Analysis", "Deployment", "Inference"]
         )
         self.outputs.verticalHeader().setVisible(False)
         self.outputs.setShowGrid(False)
         self.outputs.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.outputs.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.outputs.setMinimumHeight(100)
-        self.outputs.setMaximumHeight(150)
+        self.outputs.verticalHeader().setDefaultSectionSize(46)
+        self.outputs.setMinimumHeight(120)
+        self.outputs.setMaximumHeight(220)
         layout.addWidget(self.outputs)
         layout.addStretch()
         scroll.setWidget(content)
         outer.addWidget(scroll)
 
     def refresh(self) -> None:
-        snapshot = build_project_snapshot(self.config)
-        self.title.setText(snapshot.title)
-        ready_tools = [area for area in snapshot.areas if area.action and area.ready]
-        if ready_tools:
-            names = ", ".join(area.title for area in ready_tools)
-            self.readiness.setText(
-                f"{len(ready_tools)} tool{'s' if len(ready_tools) != 1 else ''} ready: {names}. "
-                "Run any of them from its card or its page."
-            )
-        else:
-            unique = list(dict.fromkeys(issue.message for issue in snapshot.issues))
-            self.readiness.setText("Configure a tool before running: " + " | ".join(unique))
-        for area in snapshot.areas:
-            self._cards[area.area_id].apply(area, self._running)
         self._refresh_outputs()
 
     def set_running(self, running: bool) -> None:
         self._running = running
-        if running:
-            self.current_stage.setText("Preparing run...")
-        else:
-            self.current_stage.setText("Run complete" if self._results else "Not running")
+        self.current_stage.setText("Running" if running else ("Completed" if self._results else "Not running"))
         self.refresh()
 
     def handle_action_event(self, event: ActionEvent) -> None:
-        labels = {"running": "Running", "completed": "Complete", "failed": "Failed"}
-        subject = f"{event.subject} | " if event.subject else ""
+        labels = {
+            "running": "Running",
+            "completed": "Completed",
+            "failed": "Failed",
+            "cancelled": "Cancelled",
+        }
+        subject = f"{event.subject} · " if event.subject else ""
         self.current_stage.setText(
-            f"{subject}{event.action_name} ({event.index}/{event.total}) | "
+            f"{subject}{event.action_name} ({event.index}/{event.total}) · "
             f"{labels.get(event.status, event.status.title())}"
         )
 
@@ -202,28 +207,31 @@ class ProjectTab(QWidget):
         self._refresh_outputs()
 
     def _refresh_outputs(self) -> None:
+        empty = not self._results
+        self.empty.setVisible(empty)
+        self.outputs.setVisible(not empty)
         self.outputs.setRowCount(len(self._results))
         for row, result in enumerate(self._results):
-            outcome = "Failed" if result.training_error else "Complete"
+            outcome = "Failed" if result.training_error else "Completed"
             values = (
                 result.model_name,
                 outcome,
-                "Ready" if result.output_path else "-",
-                "Ready" if result.analysis_path else "-",
-                "Ready" if result.deployment_path else "-",
-                "Ready" if result.inference_path else "-",
+                "Ready" if result.output_path else "—",
+                "Ready" if result.analysis_path else "—",
+                "Ready" if result.deployment_path else "—",
+                "Ready" if result.inference_path else "—",
             )
             for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                if result.training_error:
-                    item.setToolTip(result.training_error)
-                elif column > 1:
-                    paths = (
-                        result.output_path,
-                        result.analysis_path,
-                        result.deployment_path,
-                        result.inference_path,
-                    )
-                    if paths[column - 2]:
-                        item.setToolTip(paths[column - 2])
-                self.outputs.setItem(row, column, item)
+                self.outputs.setItem(row, column, QTableWidgetItem(value))
+
+
+def _current_step(snapshot) -> int:
+    areas = {area.area_id: area for area in snapshot.areas}
+    if not areas.get("models") or not areas["models"].ready:
+        return 0
+    training = areas.get("training")
+    if training and not training.ready:
+        return 0
+    if training and training.ready:
+        return 1
+    return 0
