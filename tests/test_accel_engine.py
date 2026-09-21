@@ -139,6 +139,47 @@ def test_every_page_method_runs_on_the_accel_engine(tmp_path):
         assert out.endswith("accel_adapter")
 
 
+def test_eval_row_keeps_hellaswag_choices():
+    from finetuner.datasets.presets import eval_row, _format_hellaswag
+
+    row = {
+        "ctx": "A cat sat on the",
+        "endings": ["mat.", "moon.", "tax form.", "orchestra."],
+        "label": 0,
+    }
+    text = _format_hellaswag(row)
+    payload = eval_row("hellaswag", row, text)
+    assert payload["choices"] == row["endings"]
+    assert payload["gold_index"] == 0
+    assert payload["gold"] == "mat."
+
+
+def test_choice_scoring_picks_the_gold_ending():
+    from finetuner.training.accel.evaluate import score_benchmark_accel
+
+    backbone = FakeBackbone()
+    tokenizer = FakeTokenizer()
+    rows = [
+        {
+            "task": "hellaswag",
+            "prompt": "A\n### Response:\n",
+            "gold": "aaaa",
+            "choices": ["aaaa", "zzzz"],
+            "gold_index": 0,
+            "text": "A\n### Response:\naaaa",
+        }
+    ]
+    scores = score_benchmark_accel(
+        rows,
+        generate_gsm8k=False,
+        backbone=backbone,
+        tokenizer=tokenizer,
+        adapter=None,
+    )
+    assert scores["n"] == 1
+    assert "accuracy" in scores
+
+
 def test_sequence_logprob_matches_masked_tokens():
     logits = np.zeros((2, 4), dtype=np.float32)
     logits[0, 1] = 5.0

@@ -77,10 +77,14 @@ def score_benchmark_accel(
     generate_gsm8k: bool = True,
     max_new_tokens: int = 24,
     log: LogFn | None = None,
+    backbone=None,
+    tokenizer=None,
+    adapter=None,
 ) -> dict[str, float]:
     if not rows:
         return {"accuracy": 0.0, "gold_logprob": 0.0, "n": 0.0}
-    backbone, tokenizer, adapter = load_runtime(artifact_path, adapter_dir)
+    if backbone is None or tokenizer is None:
+        backbone, tokenizer, adapter = load_runtime(artifact_path, adapter_dir)
     correct = 0
     logprobs: list[float] = []
     for row in rows:

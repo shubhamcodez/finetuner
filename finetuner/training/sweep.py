@@ -189,9 +189,12 @@ def _bundled_text_rows(dataset_id: str, limit: int) -> list[dict]:
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        text = row_to_text(json.loads(line), formatter)
+        raw = json.loads(line)
+        text = row_to_text(raw, formatter)
         if text:
-            rows.append({"text": text})
+            from finetuner.datasets.presets import eval_row
+
+            rows.append(eval_row(dataset_id, raw, text))
         if limit and len(rows) >= limit:
             break
     return rows
@@ -229,6 +232,10 @@ def materialize_dataset(
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open("w", encoding="utf-8") as handle:
         for row in train_rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    holdout_path = destination.with_name(destination.stem + ".holdout.jsonl")
+    with holdout_path.open("w", encoding="utf-8") as handle:
+        for row in holdout:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     log(f"Materialized {len(train_rows)} train / {len(holdout)} holdout rows for {dataset_id}")
     return destination, holdout
@@ -347,15 +354,18 @@ def _score_policy(
 ) -> dict[str, float]:
     scores: dict[str, float] = {}
     if accelerator in {"npu", "tpu", "cpu"}:
-        from finetuner.training.accel.evaluate import score_holdout_accel
+        from finetuner.training.accel.evaluate import score_benchmark_accel
 
         adapter_dir = model_path if (Path(model_path) / "npu_adapter.json").is_file() else ""
-        if holdout:
-            scores["holdout"] = score_holdout_accel(
-                holdout,
-                artifact_path=npu_artifact_path or model_path,
-                adapter_dir=adapter_dir,
-                log=log,
+        sample = holdout[: max(0, eval_samples)] if eval_samples else holdout
+        if sample:
+            scores.update(
+                score_benchmark_accel(
+                    sample,
+                    artifact_path=npu_artifact_path or model_path,
+                    adapter_dir=adapter_dir,
+                    log=log,
+                )
             )
         return scores
 
@@ -385,12 +395,14 @@ def _score_reward(config: SweepConfig, artifact: str, dataset_path: str, log: Lo
             if line.strip()
         ]
         pairs = prepare_method_dataset(raw, "reward", allow_synthetic_preferences=True)
-        return score_reward_ranking_accel(
+        ranked = score_reward_ranking_accel(
             list(pairs),
             artifact_path=config.npu_artifact_path or artifact,
             adapter_dir=artifact,
+            max_pairs=max(16, config.eval_samples),
             log=log,
         )
+        return ranked
     return score_reward_ranking(artifact, dataset_path, log)
 
 
@@ -536,8 +548,11 @@ def run_cell(
         result.artifact_bytes = directory_bytes(adapter if adapter.is_dir() else Path(artifact))
         eval_started = time.monotonic()
         if cell.method == "reward":
+            ranking = _score_reward(config, artifact, str(dataset_path), captured)
             result.scores = {
-                "reward_ranking": _score_reward(config, artifact, str(dataset_path), captured)
+                "reward_ranking": ranking,
+                "accuracy": ranking,
+                "n": float(config.eval_samples),
             }
         elif cell.method in POLICY_METHODS:
             result.scores = _score_policy(
@@ -664,6 +679,10 @@ def run_sweep(config: SweepConfig, log: LogFn | None = None) -> dict:
                 accelerator=config.accelerator,
                 npu_artifact_path=config.npu_artifact_path or model_path,
             )
+            if _uses_accel(config):
+                baselines[dataset_id]["reward_ranking"] = _score_reward(
+                    config, model_path, str(data_path), logger
+                )
             _release_memory()
         _write_json(baseline_path, baselines)
 

@@ -46,6 +46,7 @@ def main() -> int:
     parser.add_argument("--seq-length", type=int, default=256)
     parser.add_argument("--grad-accum", type=int, default=4)
     parser.add_argument("--lora-rank", type=int, default=8)
+    parser.add_argument("--lr", type=float, default=2e-4)
     parser.add_argument(
         "--accelerator",
         default="cuda",
@@ -73,6 +74,7 @@ def main() -> int:
         resume=not args.no_resume,
         max_seq_length=args.seq_length,
         gradient_accumulation_steps=args.grad_accum,
+        learning_rate=args.lr,
         lora_rank=args.lora_rank,
         lora_alpha=max(16, args.lora_rank * 2),
         accelerator=args.accelerator,
