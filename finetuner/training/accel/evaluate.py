@@ -104,6 +104,12 @@ def score_benchmark_accel(
             gold_index = int(row.get("gold_index") or 0)
             if predicted == gold_index:
                 correct += 1
+        elif task == "gsm8k" or "####" in gold:
+            answer = extract_gsm8k_answer(gold or str(row.get("answer") or ""))
+            prefix = prompt + gold.split("####")[0] + "#### "
+            _, answer_acc = _gold_stats(backbone, adapter, tokenizer, prefix, answer, max_length)
+            if answer_acc >= 0.999:
+                correct += 1
         elif generate_gsm8k:
             prompt_ids = np.array(tokenizer.encode(prompt)[: max(8, max_length // 2)], dtype=np.int64)
 
