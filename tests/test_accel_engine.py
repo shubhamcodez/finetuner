@@ -66,8 +66,9 @@ def test_resolve_accelerator_aliases_and_auto():
     assert resolve_accelerator(TrainingConfig(training_method="tpu")) == "tpu"
     assert resolve_accelerator(TrainingConfig(training_method="sft", accelerator="npu")) == "npu"
     assert engine_method(TrainingConfig(training_method="tpu")) == "sft"
-    assert uses_accel_engine(TrainingConfig(accelerator="tpu"))
+    assert uses_accel_engine(TrainingConfig(accelerator="tpu", quality_recipe=False))
     assert not uses_accel_engine(TrainingConfig(training_method="sft", accelerator="cuda"))
+    assert not uses_accel_engine(TrainingConfig(accelerator="npu", quality_recipe=True))
 
 
 def test_dpo_and_kto_math_prefer_the_better_sequence():

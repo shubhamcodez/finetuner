@@ -70,6 +70,8 @@ class TrainingConfig:
     allow_synthetic_preferences: bool = False
     accelerator: str = "cuda"
     npu_artifact_path: str = ""
+    quality_recipe: bool = True
+    use_chat_template: bool = True
     seed: int = 42
 
 
@@ -143,6 +145,8 @@ class ProjectConfig:
                 "allow_synthetic_preferences": self.training.allow_synthetic_preferences,
                 "accelerator": self.training.accelerator,
                 "npu_artifact_path": self.training.npu_artifact_path,
+                "quality_recipe": self.training.quality_recipe,
+                "use_chat_template": self.training.use_chat_template,
                 "seed": self.training.seed,
             },
             "enabled_evals": self.enabled_evals,

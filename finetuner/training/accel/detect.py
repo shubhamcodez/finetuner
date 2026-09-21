@@ -72,6 +72,8 @@ def resolve_accelerator(training: TrainingConfig) -> str:
 def uses_accel_engine(training: TrainingConfig) -> bool:
     if (training.training_method or "") in ALIAS_METHODS:
         return True
+    if getattr(training, "quality_recipe", False):
+        return False
     return resolve_accelerator(training) in ACCEL_ENGINES
 
 

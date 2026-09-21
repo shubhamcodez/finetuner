@@ -221,6 +221,17 @@ class TrainingTab(QWidget):
         method_grid.addWidget(self.npu_artifact_label, 5, 0)
         method_grid.addWidget(self.npu_artifact_edit, 5, 1, 1, 3)
 
+        self.quality_check = QCheckBox(
+            "Quality recipe (recommended): chat template + assistant-only LoRA on attention/MLP"
+        )
+        self.quality_check.setChecked(True)
+        self.quality_check.setToolTip(
+            "Trains the real transformer with LoRA. The NPU logit adapter cannot "
+            "move GSM8K/HellaSwag/ARC much because it never updates hidden states."
+        )
+        self.quality_check.stateChanged.connect(self._on_quality_changed)
+        method_grid.addWidget(self.quality_check, 6, 0, 1, 4)
+
         layout.addWidget(method_group)
 
         self.advanced_button = QPushButton("Show advanced settings")
@@ -350,6 +361,7 @@ class TrainingTab(QWidget):
         self.kl_spin.setValue(t.ppo_kl_coef)
         self.clip_spin.setValue(t.ppo_cliprange)
         self.npu_artifact_edit.setText(t.npu_artifact_path)
+        self.quality_check.setChecked(t.quality_recipe)
 
         self._update_method_hint()
         self._update_method_fields()
@@ -361,7 +373,29 @@ class TrainingTab(QWidget):
         self._update_method_fields()
         self._sync_config()
 
+    def _on_quality_changed(self, _state: int = 0) -> None:
+        if self.quality_check.isChecked() and self.accelerator_combo.currentData() in {
+            "npu",
+            "tpu",
+            "cpu",
+        }:
+            self.accelerator_combo.blockSignals(True)
+            self.accelerator_combo.setCurrentIndex(max(0, self.accelerator_combo.findData("cuda")))
+            self.accelerator_combo.blockSignals(False)
+        self._update_method_hint()
+        self._update_method_fields()
+        self._sync_config()
+
     def _on_method_changed(self, _index: int = 0) -> None:
+        accel = self.accelerator_combo.currentData()
+        if (
+            getattr(self, "quality_check", None) is not None
+            and accel in {"npu", "tpu", "cpu"}
+            and self.quality_check.isChecked()
+        ):
+            self.quality_check.blockSignals(True)
+            self.quality_check.setChecked(False)
+            self.quality_check.blockSignals(False)
         self._update_method_hint()
         self._update_method_fields()
         self._sync_config()
@@ -370,7 +404,10 @@ class TrainingTab(QWidget):
         method_id = self.method_combo.currentData() or "sft"
         spec = TRAINING_METHODS.get(method_id)
         accelerator = self.accelerator_combo.currentData() or "cuda"
-        if accelerator in {"npu", "tpu", "cpu"} or method_id in {"npu", "tpu"}:
+        quality_on = getattr(self, "quality_check", None) is not None and self.quality_check.isChecked()
+        if quality_on and method_id not in {"npu", "tpu"}:
+            engine = "quality LoRA (chat template + assistant-only loss)"
+        elif accelerator in {"npu", "tpu", "cpu"} or method_id in {"npu", "tpu"}:
             engine = "NPU/TPU engine (frozen ONNX + logit LoRA)"
         elif accelerator == "auto":
             engine = "auto device (NPU/TPU engine if present, otherwise TRL)"
@@ -390,7 +427,11 @@ class TrainingTab(QWidget):
         uses_beta = method_id in ("dpo", "kto")
         uses_grpo = method_id in ("grpo", "rloo")
         uses_ppo = method_id == "ppo"
-        uses_accel = accelerator in {"npu", "tpu", "cpu", "auto"} or method_id in {"npu", "tpu"}
+        quality_on = getattr(self, "quality_check", None) is not None and self.quality_check.isChecked()
+        uses_accel = (
+            not quality_on
+            and (accelerator in {"npu", "tpu", "cpu", "auto"} or method_id in {"npu", "tpu"})
+        )
         if uses_accel and accelerator != "cuda" and self.qlora_check.isChecked():
             self.qlora_check.blockSignals(True)
             self.qlora_check.setChecked(False)
@@ -577,6 +618,8 @@ class TrainingTab(QWidget):
         t.allow_synthetic_preferences = self.synthetic_preferences_check.isChecked()
         t.training_method = self.method_combo.currentData() or "sft"
         t.accelerator = self.accelerator_combo.currentData() or "cuda"
+        t.quality_recipe = self.quality_check.isChecked()
+        t.use_chat_template = self.quality_check.isChecked()
         t.reward_function = self.reward_combo.currentData() or "exact_match"
         t.reward_model_id = self.reward_model_edit.text().strip()
         t.dpo_beta = self.beta_spin.value()

@@ -30,6 +30,15 @@ def train(
 
     from finetuner.training.accel.detect import resolve_accelerator, uses_accel_engine
 
+    if training.quality_recipe and (training.training_method or "sft") not in {"npu", "tpu"}:
+        from finetuner.training.recipe import apply_quality_recipe
+
+        training = apply_quality_recipe(training)
+        log(
+            "Quality recipe: chat template + assistant-only loss + LoRA on attention/MLP. "
+            "This trains the real transformer, not the NPU logit adapter."
+        )
+
     accelerator = resolve_accelerator(training)
     if uses_accel_engine(training):
         runtime = {"device": accelerator}
@@ -131,6 +140,7 @@ def train_sft(
 def _train_sft(model_path, training, dataset, tokenizer, out, log):
     from trl import SFTConfig, SFTTrainer
 
+    from finetuner.training.chat_format import ensure_messages
     from finetuner.training.common import (
         base_training_kwargs,
         detect_text_field,
@@ -139,15 +149,30 @@ def _train_sft(model_path, training, dataset, tokenizer, out, log):
     )
 
     model = load_lora_model(model_path, training, log)
-    text_field = detect_text_field(dataset)
-    log(f"Using text field: {text_field}")
+    use_chat = bool(training.use_chat_template or training.quality_recipe)
+    if use_chat:
+        rows = ensure_messages(dataset)
+        from datasets import Dataset
 
-    sft_config = SFTConfig(
-        **base_training_kwargs(training, out),
-        max_length=training.max_seq_length,
-        dataset_text_field=text_field,
-        packing=False,
-    )
+        dataset = Dataset.from_list(rows)
+        if "text" in dataset.column_names:
+            dataset = dataset.remove_columns(["text"])
+        log("SFT using conversational messages + assistant-only loss")
+        sft_config = SFTConfig(
+            **base_training_kwargs(training, out),
+            max_length=training.max_seq_length,
+            assistant_only_loss=True,
+            packing=False,
+        )
+    else:
+        text_field = detect_text_field(dataset)
+        log(f"Using text field: {text_field}")
+        sft_config = SFTConfig(
+            **base_training_kwargs(training, out),
+            max_length=training.max_seq_length,
+            dataset_text_field=text_field,
+            packing=False,
+        )
     trainer = SFTTrainer(
         model=model,
         args=sft_config,

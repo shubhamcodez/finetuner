@@ -482,6 +482,8 @@ def _training_config(config: SweepConfig, cell: SweepCell, reward_model_id: str 
         grpo_num_generations=2,
         accelerator=config.accelerator,
         npu_artifact_path=config.npu_artifact_path,
+        quality_recipe=not _uses_accel(config),
+        use_chat_template=not _uses_accel(config),
         seed=42,
     )
 

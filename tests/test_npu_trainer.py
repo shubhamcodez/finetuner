@@ -73,5 +73,7 @@ def test_npu_method_rejects_qlora():
 
 
 def test_accel_engine_rejects_qlora():
-    config = TrainingConfig(training_method="dpo", accelerator="tpu", use_qlora=True)
+    config = TrainingConfig(
+        training_method="dpo", accelerator="tpu", use_qlora=True, quality_recipe=False
+    )
     assert any("QLoRA" in error for error in validate_training_config(config, "dpo"))

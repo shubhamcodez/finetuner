@@ -186,6 +186,12 @@ KTO needs binary labels:
 
 Online methods (GRPO, PPO, RLOO) need a `prompt` column, or SFT-style text that can be split on `### Response:`.
 
+### Quality recipe
+
+Leave **Quality recipe** checked. That path trains LoRA on the model's attention and MLP layers, formats every example with the tokenizer chat template, and computes loss only on assistant tokens. That is what actually moves GSM8K / HellaSwag / ARC.
+
+The NPU/TPU logit adapter is a frozen-decoder experiment. It does not update hidden states, so benchmark gains stay near zero. Use it only when you explicitly pick **NPU engine** / **TPU engine** and turn Quality recipe off.
+
 ### Training methods
 
 | Method | Data it expects | Notes |

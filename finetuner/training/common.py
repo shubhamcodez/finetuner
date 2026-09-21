@@ -108,6 +108,11 @@ def load_lora_model(model_path: str, training: TrainingConfig, log: Callable[[st
         target_modules=training.lora_target_modules or "all-linear",
     )
     model = get_peft_model(model, lora_config)
+    if training.quality_recipe:
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+        if hasattr(model, "gradient_checkpointing_enable"):
+            model.gradient_checkpointing_enable()
     model.print_trainable_parameters()
     return model
 
@@ -128,6 +133,12 @@ def base_training_kwargs(training: TrainingConfig, output_dir: Path) -> dict:
     }
     if runtime["device"] == "cpu":
         kwargs["use_cpu"] = True
+    if training.quality_recipe:
+        kwargs["lr_scheduler_type"] = "cosine"
+        kwargs["warmup_ratio"] = 0.05
+        kwargs["max_grad_norm"] = 1.0
+        kwargs["optim"] = "adamw_torch"
+        kwargs["logging_steps"] = min(10, max(1, training.max_steps))
     return kwargs
 
 

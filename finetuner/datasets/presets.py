@@ -174,7 +174,8 @@ def eval_row(preset_id: str, row: dict, text: str) -> dict:
     payload["gold"] = gold.strip()
     if preset_id == "gsm8k":
         payload["answer"] = str(row.get("answer") or payload["gold"])
-        return payload
+        payload["question"] = str(row.get("question") or "")
+        return _with_messages(row, payload)
     if preset_id == "hellaswag":
         endings = [str(item) for item in (row.get("endings") or [])]
         label = row.get("label", row.get("labels", 0))
@@ -189,7 +190,7 @@ def eval_row(preset_id: str, row: dict, text: str) -> dict:
             payload["choices"] = endings
             payload["gold_index"] = index
             payload["gold"] = endings[index]
-        return payload
+        return _with_messages(row, payload)
     if preset_id in {"arc_challenge", "mmlu"}:
         if preset_id == "arc_challenge":
             choices = row.get("choices") or {}
@@ -210,7 +211,14 @@ def eval_row(preset_id: str, row: dict, text: str) -> dict:
             payload["choices"] = texts
             payload["gold_index"] = gold_index
             payload["gold"] = texts[gold_index]
-        return payload
+        return _with_messages(row, payload)
+    return _with_messages(row, payload)
+
+
+def _with_messages(row: dict, payload: dict) -> dict:
+    from finetuner.training.chat_format import row_to_messages
+
+    payload["messages"] = row_to_messages({**row, **payload})
     return payload
 
 
