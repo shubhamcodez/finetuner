@@ -112,6 +112,25 @@ def test_directory_bytes_and_ranking(tmp_path):
 
 def test_delta_scores_ignore_missing_baseline():
     assert delta_scores({"gsm8k": 5.0}, {}) == {"gsm8k": 5.0}
+    assert "n" not in delta_scores({"accuracy": 10.0, "n": 120.0}, {"accuracy": 8.0, "n": 120.0})
+
+
+def test_finalize_ignores_logprob_when_averaging_quality():
+    result = finalize_cell(
+        CellResult(
+            method="sft",
+            dataset="gsm8k",
+            status="completed",
+            train_seconds=3600,
+            steps=10,
+            examples=10,
+            scores={"accuracy": 12.0, "gold_logprob": -1.0, "n": 100.0},
+            baseline_scores={"accuracy": 10.0, "gold_logprob": -2.0, "n": 100.0},
+        )
+    )
+    assert result.delta_scores["accuracy"] == 2.0
+    assert result.delta_scores["gold_logprob"] == 1.0
+    assert result.mean_delta == 2.0
 
 
 def test_plan_cells_covers_each_method_once_per_dataset():

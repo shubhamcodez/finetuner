@@ -211,6 +211,24 @@ def materialize_dataset(
 ) -> tuple[Path, list[dict]]:
     train_count = max(1, max_samples)
     extra = max(0, holdout_samples)
+    holdout_path = destination.with_name(destination.stem + ".holdout.jsonl")
+    if destination.is_file() and holdout_path.is_file():
+        existing_train = [
+            json.loads(line)
+            for line in destination.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        existing_holdout = [
+            json.loads(line)
+            for line in holdout_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        if len(existing_train) >= train_count and len(existing_holdout) >= min(extra, 1):
+            log(
+                f"Reusing materialized {len(existing_train)} train / "
+                f"{len(existing_holdout)} holdout rows for {dataset_id}"
+            )
+            return destination, existing_holdout[:extra] if extra else existing_holdout
     try:
         from finetuner.datasets.loader import load_preset_dataset
 
