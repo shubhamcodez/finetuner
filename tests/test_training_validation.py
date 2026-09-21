@@ -12,8 +12,13 @@ def test_online_rl_generation_count_must_divide_effective_batch():
 
 
 def test_duplicate_lora_targets_are_rejected():
-    config = TrainingConfig(lora_target_modules=["q_proj", "q_proj"])
+    config = TrainingConfig(use_lora=True, lora_target_modules=["q_proj", "q_proj"])
     assert any("duplicates" in error for error in validate_training_config(config, "sft"))
+
+
+def test_lora_rank_is_ignored_when_lora_is_off():
+    config = TrainingConfig(use_lora=False, use_qlora=False, lora_rank=0)
+    assert validate_training_config(config, "sft") == []
 
 
 def test_sweep_defaults_validate_for_every_page_method():

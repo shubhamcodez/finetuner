@@ -16,11 +16,12 @@ QUALITY_LORA_TARGETS = [
 
 
 def apply_quality_recipe(training: TrainingConfig) -> TrainingConfig:
-    """LoRA on the real transformer, chat template, assistant-only loss.
+    """Chat template + assistant-only loss on the real transformer.
 
-    The NPU logit adapter cannot change hidden states, so it barely moves
-    GSM8K/HellaSwag/ARC. This recipe trains the attention and MLP adapters
-    the model actually uses at inference.
+    Full-weight SFT is the default when LoRA is off. LoRA/QLoRA stay opt-in
+    via the training toggles; this recipe only raises adapter rank if those
+    toggles are already on. The NPU logit adapter cannot change hidden
+    states, so this path always leaves the frozen-decoder engine.
     """
     try:
         import torch
@@ -31,26 +32,40 @@ def apply_quality_recipe(training: TrainingConfig) -> TrainingConfig:
     seq = training.max_seq_length
     if seq >= 1024:
         seq = 768 if cuda else 384
-    rank = max(training.lora_rank, 32)
     accum = training.gradient_accumulation_steps
     if accum < 4:
-        accum = 8 if cuda else 8
+        accum = 8
     steps = training.max_steps
     if steps < 200:
         steps = 400 if cuda else 200
-    targets = list(training.lora_target_modules) or list(QUALITY_LORA_TARGETS)
-    return replace(
-        training,
-        quality_recipe=True,
-        use_chat_template=True,
-        use_qlora=cuda and training.use_qlora,
-        accelerator="cuda" if training.accelerator in {"", "auto", "npu", "tpu", "cpu"} else training.accelerator,
-        max_seq_length=seq,
-        lora_rank=rank,
-        lora_alpha=max(training.lora_alpha, rank * 2),
-        lora_target_modules=targets,
-        gradient_accumulation_steps=accum,
-        max_steps=steps,
-        learning_rate=min(max(training.learning_rate, 1e-4), 3e-4),
-        batch_size=1,
-    )
+    updates: dict = {
+        "quality_recipe": True,
+        "use_chat_template": True,
+        "accelerator": (
+            "cuda"
+            if training.accelerator in {"", "auto", "npu", "tpu", "cpu"}
+            else training.accelerator
+        ),
+        "max_seq_length": seq,
+        "gradient_accumulation_steps": accum,
+        "max_steps": steps,
+        "batch_size": 1,
+    }
+    if training.uses_lora():
+        rank = max(training.lora_rank, 32)
+        targets = list(training.lora_target_modules) or list(QUALITY_LORA_TARGETS)
+        updates.update(
+            use_lora=True,
+            use_qlora=cuda and training.use_qlora,
+            lora_rank=rank,
+            lora_alpha=max(training.lora_alpha, rank * 2),
+            lora_target_modules=targets,
+            learning_rate=min(max(training.learning_rate, 1e-4), 3e-4),
+        )
+    else:
+        updates.update(
+            use_lora=False,
+            use_qlora=False,
+            learning_rate=min(max(training.learning_rate, 1e-5), 5e-5),
+        )
+    return replace(training, **updates)

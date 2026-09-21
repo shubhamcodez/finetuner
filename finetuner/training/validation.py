@@ -21,10 +21,11 @@ def validate_training_config(config: TrainingConfig, method_id: str | None = Non
         errors.append("max_steps must be positive")
     if not 0 < config.learning_rate <= 0.1:
         errors.append("learning_rate must be greater than 0 and at most 0.1")
-    if config.lora_rank <= 0 or config.lora_alpha <= 0:
-        errors.append("LoRA rank and alpha must be positive")
-    if len(set(config.lora_target_modules)) != len(config.lora_target_modules):
-        errors.append("LoRA target modules must not contain duplicates")
+    if config.uses_lora():
+        if config.lora_rank <= 0 or config.lora_alpha <= 0:
+            errors.append("LoRA rank and alpha must be positive")
+        if len(set(config.lora_target_modules)) != len(config.lora_target_modules):
+            errors.append("LoRA target modules must not contain duplicates")
     if config.batch_size <= 0 or config.gradient_accumulation_steps <= 0:
         errors.append("batch size and gradient accumulation must be positive")
     if config.max_seq_length < 32:

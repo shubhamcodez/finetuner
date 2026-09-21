@@ -34,8 +34,9 @@ def train(
         from finetuner.training.recipe import apply_quality_recipe
 
         training = apply_quality_recipe(training)
+        adapter = "LoRA" if training.uses_lora() else "full SFT"
         log(
-            "Quality recipe: chat template + assistant-only loss + LoRA on attention/MLP. "
+            f"Quality recipe: chat template + assistant-only loss + {adapter}. "
             "This trains the real transformer, not the NPU logit adapter."
         )
 
@@ -140,7 +141,7 @@ def train_sft(
 def _train_sft(model_path, training, dataset, tokenizer, out, log):
     from trl import SFTConfig, SFTTrainer
 
-    from finetuner.training.chat_format import ensure_messages
+    from finetuner.training.chat_format import conversational_rows
     from finetuner.training.common import (
         base_training_kwargs,
         detect_text_field,
@@ -151,12 +152,9 @@ def _train_sft(model_path, training, dataset, tokenizer, out, log):
     model = load_lora_model(model_path, training, log)
     use_chat = bool(training.use_chat_template or training.quality_recipe)
     if use_chat:
-        rows = ensure_messages(dataset)
         from datasets import Dataset
 
-        dataset = Dataset.from_list(rows)
-        if "text" in dataset.column_names:
-            dataset = dataset.remove_columns(["text"])
+        dataset = Dataset.from_list(conversational_rows(dataset))
         log("SFT using conversational messages + assistant-only loss")
         sft_config = SFTConfig(
             **base_training_kwargs(training, out),
@@ -347,14 +345,16 @@ def _train_ppo(model_path, training, dataset, tokenizer, out, log):
     if runtime["device"] == "cpu":
         reward_model = reward_model.to("cpu")
 
-    lora_config = LoraConfig(
-        r=training.lora_rank,
-        lora_alpha=training.lora_alpha,
-        lora_dropout=0.05,
-        bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=training.lora_target_modules or "all-linear",
-    )
+    lora_config = None
+    if training.uses_lora():
+        lora_config = LoraConfig(
+            r=training.lora_rank,
+            lora_alpha=training.lora_alpha,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM",
+            target_modules=training.lora_target_modules or "all-linear",
+        )
 
     def _tokenize(row):
         encoded = tokenizer(

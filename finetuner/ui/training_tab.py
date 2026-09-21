@@ -222,12 +222,13 @@ class TrainingTab(QWidget):
         method_grid.addWidget(self.npu_artifact_edit, 5, 1, 1, 3)
 
         self.quality_check = QCheckBox(
-            "Quality recipe (recommended): chat template + assistant-only LoRA on attention/MLP"
+            "Quality recipe (recommended): chat template + assistant-only loss"
         )
         self.quality_check.setChecked(True)
         self.quality_check.setToolTip(
-            "Trains the real transformer with LoRA. The NPU logit adapter cannot "
-            "move GSM8K/HellaSwag/ARC much because it never updates hidden states."
+            "Full-weight SFT on the real transformer unless LoRA is toggled on. "
+            "The NPU logit adapter cannot move GSM8K/HellaSwag/ARC much because "
+            "it never updates hidden states."
         )
         self.quality_check.stateChanged.connect(self._on_quality_changed)
         method_grid.addWidget(self.quality_check, 6, 0, 1, 4)
@@ -262,46 +263,58 @@ class TrainingTab(QWidget):
         params_grid.addWidget(QLabel("Learning rate"), 0, 2)
         params_grid.addWidget(self.lr_spin, 0, 3)
 
+        self.lora_check = QCheckBox("Use LoRA")
+        self.lora_check.setToolTip(
+            "Off by default. Full SFT updates every weight when the device can hold the model. "
+            "Turn this on only when you want a PEFT adapter."
+        )
+        self.lora_check.stateChanged.connect(self._on_lora_changed)
+        params_grid.addWidget(self.lora_check, 1, 0, 1, 2)
+
+        self.qlora_check = QCheckBox("Use QLoRA (4-bit)")
+        self.qlora_check.setToolTip("Requires LoRA. 4-bit adapters on CUDA when VRAM is tight.")
+        self.qlora_check.stateChanged.connect(self._on_qlora_changed)
+        params_grid.addWidget(self.qlora_check, 1, 2, 1, 2)
+
+        self.lora_rank_label = QLabel("LoRA rank")
         self.lora_rank_spin = QSpinBox()
         self.lora_rank_spin.setRange(4, 128)
         self.lora_rank_spin.valueChanged.connect(self._sync_config)
-        params_grid.addWidget(QLabel("LoRA rank"), 1, 0)
-        params_grid.addWidget(self.lora_rank_spin, 1, 1)
+        params_grid.addWidget(self.lora_rank_label, 2, 0)
+        params_grid.addWidget(self.lora_rank_spin, 2, 1)
 
+        self.lora_alpha_label = QLabel("LoRA alpha")
         self.lora_alpha_spin = QSpinBox()
         self.lora_alpha_spin.setRange(8, 256)
         self.lora_alpha_spin.valueChanged.connect(self._sync_config)
-        params_grid.addWidget(QLabel("LoRA alpha"), 1, 2)
-        params_grid.addWidget(self.lora_alpha_spin, 1, 3)
+        params_grid.addWidget(self.lora_alpha_label, 2, 2)
+        params_grid.addWidget(self.lora_alpha_spin, 2, 3)
 
+        self.lora_targets_label = QLabel("LoRA targets")
         self.lora_targets_edit = QLineEdit()
         self.lora_targets_edit.setPlaceholderText("Auto (all linear), or q_proj,v_proj,...")
         self.lora_targets_edit.textChanged.connect(self._sync_config)
-        params_grid.addWidget(QLabel("LoRA targets"), 2, 0)
-        params_grid.addWidget(self.lora_targets_edit, 2, 1, 1, 3)
+        params_grid.addWidget(self.lora_targets_label, 3, 0)
+        params_grid.addWidget(self.lora_targets_edit, 3, 1, 1, 3)
 
         self.batch_spin = QSpinBox()
         self.batch_spin.setRange(1, 32)
         self.batch_spin.valueChanged.connect(self._sync_config)
-        params_grid.addWidget(QLabel("Batch size"), 3, 0)
-        params_grid.addWidget(self.batch_spin, 3, 1)
+        params_grid.addWidget(QLabel("Batch size"), 4, 0)
+        params_grid.addWidget(self.batch_spin, 4, 1)
 
         self.grad_accum_spin = QSpinBox()
         self.grad_accum_spin.setRange(1, 64)
         self.grad_accum_spin.valueChanged.connect(self._sync_config)
-        params_grid.addWidget(QLabel("Grad accumulation"), 3, 2)
-        params_grid.addWidget(self.grad_accum_spin, 3, 3)
+        params_grid.addWidget(QLabel("Grad accumulation"), 4, 2)
+        params_grid.addWidget(self.grad_accum_spin, 4, 3)
 
         self.max_seq_spin = QSpinBox()
         self.max_seq_spin.setRange(256, 8192)
         self.max_seq_spin.setSingleStep(256)
         self.max_seq_spin.valueChanged.connect(self._sync_config)
-        params_grid.addWidget(QLabel("Max seq length"), 4, 0)
-        params_grid.addWidget(self.max_seq_spin, 4, 1)
-
-        self.qlora_check = QCheckBox("Use QLoRA (4-bit)")
-        self.qlora_check.stateChanged.connect(self._sync_config)
-        params_grid.addWidget(self.qlora_check, 4, 2, 1, 2)
+        params_grid.addWidget(QLabel("Max seq length"), 5, 0)
+        params_grid.addWidget(self.max_seq_spin, 5, 1)
 
         self.synthetic_preferences_check = QCheckBox(
             "Allow synthetic negative preferences (research only)"
@@ -310,7 +323,7 @@ class TrainingTab(QWidget):
             "Disabled by default. Production DPO/KTO should use human or model-judged feedback."
         )
         self.synthetic_preferences_check.stateChanged.connect(self._sync_config)
-        params_grid.addWidget(self.synthetic_preferences_check, 5, 0, 1, 4)
+        params_grid.addWidget(self.synthetic_preferences_check, 6, 0, 1, 4)
 
         layout.addWidget(params_group)
 
@@ -345,7 +358,9 @@ class TrainingTab(QWidget):
         self.batch_spin.setValue(t.batch_size)
         self.grad_accum_spin.setValue(t.gradient_accumulation_steps)
         self.max_seq_spin.setValue(t.max_seq_length)
+        self.lora_check.setChecked(t.use_lora or t.use_qlora)
         self.qlora_check.setChecked(t.use_qlora)
+        self._update_lora_fields()
         self.synthetic_preferences_check.setChecked(t.allow_synthetic_preferences)
         self.hf_token_edit.setText(self.config.hf_token)
 
@@ -372,6 +387,37 @@ class TrainingTab(QWidget):
     def _on_reward_changed(self, _index: int = 0) -> None:
         self._update_method_fields()
         self._sync_config()
+
+    def _on_lora_changed(self, _state: int = 0) -> None:
+        if not self.lora_check.isChecked() and self.qlora_check.isChecked():
+            self.qlora_check.blockSignals(True)
+            self.qlora_check.setChecked(False)
+            self.qlora_check.blockSignals(False)
+        self._update_lora_fields()
+        self._update_method_hint()
+        self._sync_config()
+
+    def _on_qlora_changed(self, _state: int = 0) -> None:
+        if self.qlora_check.isChecked() and not self.lora_check.isChecked():
+            self.lora_check.blockSignals(True)
+            self.lora_check.setChecked(True)
+            self.lora_check.blockSignals(False)
+        self._update_lora_fields()
+        self._update_method_hint()
+        self._sync_config()
+
+    def _update_lora_fields(self) -> None:
+        enabled = self.lora_check.isChecked() or self.qlora_check.isChecked()
+        for widget in (
+            self.lora_rank_label,
+            self.lora_rank_spin,
+            self.lora_alpha_label,
+            self.lora_alpha_spin,
+            self.lora_targets_label,
+            self.lora_targets_edit,
+        ):
+            widget.setEnabled(enabled)
+        self.qlora_check.setEnabled(True)
 
     def _on_quality_changed(self, _state: int = 0) -> None:
         if self.quality_check.isChecked() and self.accelerator_combo.currentData() in {
@@ -405,8 +451,14 @@ class TrainingTab(QWidget):
         spec = TRAINING_METHODS.get(method_id)
         accelerator = self.accelerator_combo.currentData() or "cuda"
         quality_on = getattr(self, "quality_check", None) is not None and self.quality_check.isChecked()
+        lora_on = getattr(self, "lora_check", None) is not None and (
+            self.lora_check.isChecked() or self.qlora_check.isChecked()
+        )
         if quality_on and method_id not in {"npu", "tpu"}:
-            engine = "quality LoRA (chat template + assistant-only loss)"
+            if lora_on:
+                engine = "quality LoRA (chat template + assistant-only loss)"
+            else:
+                engine = "full SFT (chat template + assistant-only loss)"
         elif accelerator in {"npu", "tpu", "cpu"} or method_id in {"npu", "tpu"}:
             engine = "NPU/TPU engine (frozen ONNX + logit LoRA)"
         elif accelerator == "auto":
@@ -436,6 +488,7 @@ class TrainingTab(QWidget):
             self.qlora_check.blockSignals(True)
             self.qlora_check.setChecked(False)
             self.qlora_check.blockSignals(False)
+        self._update_lora_fields()
 
         show_reward = uses_reward
         show_reward_model = uses_reward_model or (
@@ -614,6 +667,7 @@ class TrainingTab(QWidget):
         t.batch_size = self.batch_spin.value()
         t.gradient_accumulation_steps = self.grad_accum_spin.value()
         t.max_seq_length = self.max_seq_spin.value()
+        t.use_lora = self.lora_check.isChecked() or self.qlora_check.isChecked()
         t.use_qlora = self.qlora_check.isChecked()
         t.allow_synthetic_preferences = self.synthetic_preferences_check.isChecked()
         t.training_method = self.method_combo.currentData() or "sft"

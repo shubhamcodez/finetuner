@@ -67,6 +67,11 @@ def ensure_messages(rows) -> list[dict]:
     return out
 
 
+def conversational_rows(rows) -> list[dict]:
+    """Keep only ChatML messages so TRL does not treat leftover prompt columns as prompt-completion."""
+    return [{"messages": row_to_messages(row)} for row in rows]
+
+
 def apply_chat_prompt(tokenizer, user_text: str) -> str:
     messages = [{"role": "user", "content": user_text}]
     if getattr(tokenizer, "apply_chat_template", None) and getattr(tokenizer, "chat_template", None):

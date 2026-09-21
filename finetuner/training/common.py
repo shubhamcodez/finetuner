@@ -59,13 +59,22 @@ def load_tokenizer(model_path: str):
     return tokenizer
 
 
+def _enable_quality_checkpointing(model, log: Callable[[str], None]) -> None:
+    if hasattr(model, "enable_input_require_grads"):
+        model.enable_input_require_grads()
+    if hasattr(model, "gradient_checkpointing_enable"):
+        model.gradient_checkpointing_enable()
+        log("Gradient checkpointing enabled.")
+
+
 def load_lora_model(model_path: str, training: TrainingConfig, log: Callable[[str], None]):
     import torch
 
     runtime = train_runtime()
+    peft = training.uses_lora()
     if training.use_qlora:
         if runtime["device"] != "cuda":
-            raise RuntimeError("QLoRA requires CUDA. Disable QLoRA to train with LoRA on CPU.")
+            raise RuntimeError("QLoRA requires CUDA. Disable QLoRA to train with LoRA or full SFT on CPU.")
         log("Loading model with QLoRA (4-bit)...")
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -83,12 +92,13 @@ def load_lora_model(model_path: str, training: TrainingConfig, log: Callable[[st
         except Exception as exc:
             raise RuntimeError(
                 f"QLoRA load failed: {exc}\n"
-                "Disable QLoRA in Training settings to use fp16 LoRA instead."
+                "Disable QLoRA in Training settings to use fp16 LoRA or full SFT instead."
             ) from exc
         model = prepare_model_for_kbit_training(model)
         log("QLoRA load successful.")
     else:
-        log(f"Loading model with {runtime['dtype']} LoRA on {runtime['device']}...")
+        mode = "LoRA" if peft else "full SFT"
+        log(f"Loading model with {runtime['dtype']} {mode} on {runtime['device']}...")
         kwargs: dict[str, Any] = {
             "torch_dtype": runtime["dtype"],
             "trust_remote_code": True,
@@ -99,21 +109,28 @@ def load_lora_model(model_path: str, training: TrainingConfig, log: Callable[[st
         if runtime["device"] == "cpu":
             model = model.to("cpu")
 
-    lora_config = LoraConfig(
-        r=training.lora_rank,
-        lora_alpha=training.lora_alpha,
-        lora_dropout=0.05,
-        bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=training.lora_target_modules or "all-linear",
-    )
-    model = get_peft_model(model, lora_config)
+    if peft:
+        lora_config = LoraConfig(
+            r=training.lora_rank,
+            lora_alpha=training.lora_alpha,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM",
+            target_modules=training.lora_target_modules or "all-linear",
+        )
+        model = get_peft_model(model, lora_config)
+        if training.quality_recipe:
+            _enable_quality_checkpointing(model, log)
+        model.print_trainable_parameters()
+        return model
+
+    for param in model.parameters():
+        param.requires_grad = True
     if training.quality_recipe:
-        if hasattr(model, "enable_input_require_grads"):
-            model.enable_input_require_grads()
-        if hasattr(model, "gradient_checkpointing_enable"):
-            model.gradient_checkpointing_enable()
-    model.print_trainable_parameters()
+        _enable_quality_checkpointing(model, log)
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in model.parameters())
+    log(f"Full SFT: trainable params: {trainable:,} / {total:,} (100%)")
     return model
 
 
@@ -135,7 +152,7 @@ def base_training_kwargs(training: TrainingConfig, output_dir: Path) -> dict:
         kwargs["use_cpu"] = True
     if training.quality_recipe:
         kwargs["lr_scheduler_type"] = "cosine"
-        kwargs["warmup_ratio"] = 0.05
+        kwargs["warmup_steps"] = 0.05
         kwargs["max_grad_norm"] = 1.0
         kwargs["optim"] = "adamw_torch"
         kwargs["logging_steps"] = min(10, max(1, training.max_steps))
@@ -143,17 +160,24 @@ def base_training_kwargs(training: TrainingConfig, output_dir: Path) -> dict:
 
 
 def save_and_merge(trainer, tokenizer, output_dir: Path, log: Callable[[str], None]) -> str:
-    adapter_dir = output_dir / "adapter"
-    adapter_dir.mkdir(exist_ok=True)
-    trainer.model.save_pretrained(str(adapter_dir))
-    tokenizer.save_pretrained(str(adapter_dir))
-
     merged_dir = output_dir / "merged"
-    log("Merging LoRA weights for eval...")
-    merged = trainer.model.merge_and_unload()
-    merged.save_pretrained(str(merged_dir))
+    merged_dir.mkdir(exist_ok=True)
+    if hasattr(trainer.model, "merge_and_unload"):
+        adapter_dir = output_dir / "adapter"
+        adapter_dir.mkdir(exist_ok=True)
+        trainer.model.save_pretrained(str(adapter_dir))
+        tokenizer.save_pretrained(str(adapter_dir))
+        log("Merging LoRA weights for eval...")
+        merged = trainer.model.merge_and_unload()
+        merged.save_pretrained(str(merged_dir))
+        tokenizer.save_pretrained(str(merged_dir))
+        log(f"Merged model saved to {merged_dir}")
+        return str(merged_dir)
+
+    log("Saving full fine-tuned weights...")
+    trainer.model.save_pretrained(str(merged_dir))
     tokenizer.save_pretrained(str(merged_dir))
-    log(f"Merged model saved to {merged_dir}")
+    log(f"Full model saved to {merged_dir}")
     return str(merged_dir)
 
 

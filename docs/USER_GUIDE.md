@@ -60,7 +60,7 @@ The window has a header status badge, product tabs, and a **Run Console** at the
 |---|---|
 | **Project** | Readiness overview. Open or run any ready tool from its card. |
 | **Models** | Queue Hugging Face or local models. Most tools run on this queue. |
-| **Finetune** | Dataset, method, rewards, and LoRA settings. |
+| **Finetune** | Dataset, method, rewards, and optional LoRA settings. |
 | **Distillation** | Teacher → student transfer. Uses its own teacher/student fields, not the queue. |
 | **Evaluation** | Benchmarks (MMLU, GSM8K, HellaSwag, ARC Challenge). |
 | **Analysis** | Hidden-state projections, activation norms, attention entropy, CKA. |
@@ -188,7 +188,9 @@ Online methods (GRPO, PPO, RLOO) need a `prompt` column, or SFT-style text that 
 
 ### Quality recipe
 
-Leave **Quality recipe** checked. That path trains LoRA on the model's attention and MLP layers, formats every example with the tokenizer chat template, and computes loss only on assistant tokens. That is what actually moves GSM8K / HellaSwag / ARC.
+Leave **Quality recipe** checked. That path does full-weight SFT on the real transformer, formats every example with the tokenizer chat template, and computes loss only on assistant tokens. That is what actually moves GSM8K / HellaSwag / ARC.
+
+**Use LoRA** stays off unless you turn it on. Full SFT is the default when the device can hold the model (a 0.5B instruct checkpoint does). Enable LoRA or QLoRA only when you want a PEFT adapter.
 
 The NPU/TPU logit adapter is a frozen-decoder experiment. It does not update hidden states, so benchmark gains stay near zero. Use it only when you explicitly pick **NPU engine** / **TPU engine** and turn Quality recipe off.
 
@@ -233,11 +235,12 @@ PPO always needs a reward-model id. The HF reward function also needs one.
 Click **Show advanced settings** for:
 
 - Max steps, learning rate, batch size, gradient accumulation, max sequence length
-- LoRA rank, alpha, and optional target modules (blank = all linear layers)
-- **Use QLoRA (4-bit)** — default on; keeps adapter training on a smaller GPU
+- **Use LoRA** — off by default. Full SFT updates every weight. Turn this on for PEFT.
+- LoRA rank, alpha, and optional target modules (blank = all linear layers; ignored unless LoRA is on)
+- **Use QLoRA (4-bit)** — requires LoRA; keeps adapter training on a smaller GPU
 - Hugging Face token
 
-Start with the defaults on a 0.5B instruct model. Raise steps and batch only after a short run succeeds.
+Start with the defaults on a 0.5B instruct model (full SFT, LoRA off). Raise steps and batch only after a short run succeeds. If the device cannot hold the full model plus optimizer, turn **Use LoRA** on.
 
 ## Distillation
 
@@ -377,7 +380,7 @@ Check network access and, for gated repos, `HF_TOKEN`. Only Hugging Face rows ca
 Re-run `.\scripts\install_gpu.ps1`. Training needs a CUDA PyTorch wheel (`cu128` in the current installer). CPU PyTorch will not train.
 
 **Out of GPU memory**  
-Keep QLoRA on, batch size 1, and raise gradient accumulation instead. Use a 0.5B–1.5B student. Lower max sequence length.
+Turn on LoRA or QLoRA, keep batch size 1, and raise gradient accumulation instead. Use a 0.5B–1.5B student. Lower max sequence length.
 
 **DPO / KTO / ORPO rejects the dataset**  
 Provide real `prompt`/`chosen`/`rejected` (or KTO labels). Synthetic negatives stay off unless you accept the research-only checkbox.

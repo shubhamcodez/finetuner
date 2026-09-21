@@ -1,4 +1,4 @@
-"""Train Qwen with the quality LoRA recipe and score GSM8K before/after.
+"""Train Qwen with full-weight quality SFT and score GSM8K before/after.
 
 Example:
     FINETUNER_ALLOW_CPU_TRAIN=1 .venv-train/Scripts/python.exe scripts/train_quality_sft.py
@@ -54,27 +54,33 @@ def main() -> int:
     train_n = sum(1 for line in data_path.read_text(encoding="utf-8").splitlines() if line.strip())
     print(f"Train rows: {train_n}  Holdout: {len(holdout)}")
 
-    baseline = score_generate(model_path, holdout, max_new_tokens=192, log=print)
-    (out / "baseline.json").write_text(json.dumps(baseline, indent=2), encoding="utf-8")
-    print(f"BEFORE  accuracy={baseline['accuracy']:.1f}%  n={baseline['n']:.0f}")
+    baseline_path = out / "baseline.json"
+    if baseline_path.exists():
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        print(f"Reusing baseline  accuracy={baseline['accuracy']:.1f}%  n={baseline['n']:.0f}")
+    else:
+        baseline = score_generate(model_path, holdout, max_new_tokens=192, log=print)
+        baseline_path.write_text(json.dumps(baseline, indent=2), encoding="utf-8")
+        print(f"BEFORE  accuracy={baseline['accuracy']:.1f}%  n={baseline['n']:.0f}")
 
     training = apply_quality_recipe(
         TrainingConfig(
             training_method="sft",
             quality_recipe=True,
             use_chat_template=True,
+            use_lora=False,
             use_qlora=False,
             allow_synthetic_preferences=False,
             max_steps=200,
-            learning_rate=2e-4,
-            lora_rank=32,
-            lora_alpha=64,
+            learning_rate=2e-5,
             batch_size=1,
             gradient_accumulation_steps=8,
             max_seq_length=384,
             seed=42,
         )
     )
+    if training.uses_lora():
+        raise RuntimeError("Quality SFT must stay full-weight unless LoRA is toggled on")
     adapter = train(model_path, str(out / "train"), training, str(data_path), print)
     after = score_generate(adapter, holdout, max_new_tokens=192, log=print)
     payload = {
@@ -82,6 +88,7 @@ def main() -> int:
         "after": after,
         "delta_accuracy": after["accuracy"] - baseline["accuracy"],
         "adapter": adapter,
+        "use_lora": training.uses_lora(),
     }
     (out / "results.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(

@@ -477,6 +477,7 @@ def _training_config(config: SweepConfig, cell: SweepCell, reward_model_id: str 
         batch_size=config.batch_size,
         gradient_accumulation_steps=accum,
         max_seq_length=seq_length,
+        use_lora=False,
         use_qlora=False,
         allow_synthetic_preferences=cell.method in PREFERENCE_METHODS,
         grpo_num_generations=2,

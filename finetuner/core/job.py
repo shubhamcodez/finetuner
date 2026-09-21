@@ -59,14 +59,18 @@ class TrainingConfig:
     ppo_kl_coef: float = 0.05
     ppo_cliprange: float = 0.2
     max_steps: int = 100
-    learning_rate: float = 2e-4
+    learning_rate: float = 2e-5
     lora_rank: int = 16
     lora_alpha: int = 32
     lora_target_modules: list[str] = field(default_factory=list)
     batch_size: int = 1
     gradient_accumulation_steps: int = 4
     max_seq_length: int = 2048
-    use_qlora: bool = True
+    use_lora: bool = False
+    use_qlora: bool = False
+
+    def uses_lora(self) -> bool:
+        return bool(self.use_lora or self.use_qlora)
     allow_synthetic_preferences: bool = False
     accelerator: str = "cuda"
     npu_artifact_path: str = ""
@@ -141,6 +145,7 @@ class ProjectConfig:
                 "batch_size": self.training.batch_size,
                 "gradient_accumulation_steps": self.training.gradient_accumulation_steps,
                 "max_seq_length": self.training.max_seq_length,
+                "use_lora": self.training.use_lora,
                 "use_qlora": self.training.use_qlora,
                 "allow_synthetic_preferences": self.training.allow_synthetic_preferences,
                 "accelerator": self.training.accelerator,
