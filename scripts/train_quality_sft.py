@@ -51,7 +51,8 @@ def main() -> int:
     )
     model_path = _model_path()
     print(f"Model: {model_path}")
-    print(f"Train rows: {sum(1 for _ in data_path.open())}  Holdout: {len(holdout)}")
+    train_n = sum(1 for line in data_path.read_text(encoding="utf-8").splitlines() if line.strip())
+    print(f"Train rows: {train_n}  Holdout: {len(holdout)}")
 
     baseline = score_generate(model_path, holdout, max_new_tokens=192, log=print)
     (out / "baseline.json").write_text(json.dumps(baseline, indent=2), encoding="utf-8")
