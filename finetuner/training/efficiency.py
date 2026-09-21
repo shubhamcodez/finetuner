@@ -171,7 +171,7 @@ def parse_trainable_params(log_text: str) -> int:
     return 0
 
 
-_NON_QUALITY = {"n", "gold_logprob"}
+_NON_QUALITY = {"n", "gold_logprob", "token_acc"}
 
 
 def delta_scores(scores: dict[str, float], baseline: dict[str, float]) -> dict[str, float]:

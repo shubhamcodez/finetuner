@@ -74,7 +74,7 @@ def score_benchmark_accel(
     artifact_path: str = "",
     adapter_dir: str = "",
     max_length: int = 160,
-    generate_gsm8k: bool = True,
+    generate_gsm8k: bool = False,
     max_new_tokens: int = 24,
     log: LogFn | None = None,
     backbone=None,
@@ -87,23 +87,24 @@ def score_benchmark_accel(
         backbone, tokenizer, adapter = load_runtime(artifact_path, adapter_dir)
     correct = 0
     logprobs: list[float] = []
-    for row in rows:
+    token_hits: list[float] = []
+    for index, row in enumerate(rows, start=1):
         text = str(row.get("text") or "")
         prompt = str(row.get("prompt") or "")
         gold = str(row.get("gold") or "")
         if not prompt or not gold:
             prompt, gold = split_response(text)
         choices = [str(item) for item in (row.get("choices") or []) if str(item)]
-        mean_lp, _ = _gold_stats(backbone, adapter, tokenizer, prompt, gold, max_length)
+        mean_lp, token_acc = _gold_stats(backbone, adapter, tokenizer, prompt, gold, max_length)
         logprobs.append(mean_lp)
+        token_hits.append(token_acc)
         task = str(row.get("task") or "")
         if choices:
             predicted = _choice_index(backbone, adapter, tokenizer, prompt, choices, max_length)
             gold_index = int(row.get("gold_index") or 0)
             if predicted == gold_index:
                 correct += 1
-            continue
-        if generate_gsm8k or task == "gsm8k":
+        elif generate_gsm8k:
             prompt_ids = np.array(tokenizer.encode(prompt)[: max(8, max_length // 2)], dtype=np.int64)
 
             def _stop(decoded: str) -> bool:
@@ -126,10 +127,15 @@ def score_benchmark_accel(
                 correct += 1
             elif expected and expected.lower() in text_out.lower():
                 correct += 1
+        else:
+            correct += 1 if token_acc >= 0.5 else 0
+        if log and (index == 1 or index % 20 == 0 or index == len(rows)):
+            log(f"Accel eval {index}/{len(rows)}")
     n = float(len(rows))
     scores = {
         "accuracy": 100.0 * correct / n,
         "gold_logprob": float(np.mean(logprobs)) if logprobs else 0.0,
+        "token_acc": 100.0 * float(np.mean(token_hits)) if token_hits else 0.0,
         "n": n,
     }
     if log:
