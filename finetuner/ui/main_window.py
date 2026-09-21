@@ -191,7 +191,7 @@ class MainWindow(QMainWindow):
         self._workspace_layout.addLayout(top)
 
         self.pages = QStackedWidget()
-        self.pages.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.pages.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
         self.pages.setMinimumHeight(0)
         seen: set[int] = set()
         for page in self._page_by_area.values():

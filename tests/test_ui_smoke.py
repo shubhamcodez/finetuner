@@ -153,11 +153,11 @@ def test_system_tab_renders_npu_stats(app):
     assert "Coral" in tab.tpu_card.detail_label.text()
     assert tab.cpu_chart._view.minimumHeight() >= 180
     assert tab.npu_chart._view.minimumHeight() >= 180
-    assert tab.findChild(QScrollArea) is not None
+    assert isinstance(tab, QScrollArea)
     tab.resize(800, 360)
     tab.show()
     app.processEvents()
-    assert tab._scroll.verticalScrollBar().maximum() > 0
+    assert tab.verticalScrollBar().maximum() > 0
     tab.shutdown()
     tab.close()
 

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 
-from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
-from PySide6.QtCore import QEvent, QMargins, QRectF, QSize, Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QFrame,
@@ -22,49 +21,42 @@ from finetuner.ui.theme import Theme, chart_colors
 _CHART_HEIGHT = 260
 
 
-class _PageScroll(QScrollArea):
-    """A scroll area that can shrink below its contents so the page actually scrolls."""
-
-    def __init__(self, parent=None) -> None:
+class Sparkline(QWidget):
+    def __init__(self, y_max: float = 100.0, parent=None) -> None:
         super().__init__(parent)
-        self.setWidgetResizable(True)
-        self.setFrameShape(QFrame.Shape.NoFrame)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        self._y_max = max(y_max, 1.0)
+        self._history: deque[float] = deque(maxlen=60)
+        self.setMinimumHeight(180)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-    def minimumSizeHint(self) -> QSize:
-        return QSize(0, 0)
+    def append(self, value: float) -> None:
+        self._history.append(max(0.0, float(value)))
+        self.update()
 
-    def sizeHint(self) -> QSize:
-        return QSize(400, 240)
-
-
-class _ChartView(QChartView):
-    """Scroll the page instead of eating the wheel as a graphics-view pan."""
-
-    def wheelEvent(self, event) -> None:
-        area = self._scroll_area()
-        if area is None:
-            event.ignore()
+    def paintEvent(self, event) -> None:
+        del event
+        colors = chart_colors()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.rect(), QColor(colors.get("background", Theme.SURFACE)))
+        rect = self.rect().adjusted(6, 8, -6, -8)
+        if rect.width() < 4 or rect.height() < 4:
             return
-        bar = area.verticalScrollBar()
-        bar.setValue(bar.value() - event.angleDelta().y())
-        event.accept()
-
-    def viewportEvent(self, event) -> bool:
-        if event.type() == QEvent.Type.Wheel:
-            self.wheelEvent(event)
-            return True
-        return super().viewportEvent(event)
-
-    def _scroll_area(self) -> QScrollArea | None:
-        parent = self.parentWidget()
-        while parent is not None:
-            if isinstance(parent, QScrollArea):
-                return parent
-            parent = parent.parentWidget()
-        return None
+        painter.setPen(QPen(QColor(colors["grid"]), 1))
+        for step in range(5):
+            y = rect.top() + rect.height() * step / 4
+            painter.drawLine(rect.left(), int(y), rect.right(), int(y))
+        if len(self._history) < 2:
+            return
+        span = max(len(self._history) - 1, 1)
+        painter.setPen(QPen(QColor(colors["line"]), 2.5))
+        points = []
+        for index, value in enumerate(self._history):
+            x = rect.left() + rect.width() * index / span
+            y = rect.bottom() - rect.height() * min(value / self._y_max, 1.0)
+            points.append((x, y))
+        for start, end in zip(points, points[1:]):
+            painter.drawLine(int(start[0]), int(start[1]), int(end[0]), int(end[1]))
 
 
 class MetricCard(QFrame):
@@ -97,57 +89,9 @@ class HistoryChart(QFrame):
         self.setObjectName("SurfaceCard")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setFixedHeight(_CHART_HEIGHT)
-        colors = chart_colors()
-        self._series = QLineSeries()
-        self._history: deque[float] = deque(maxlen=60)
-
-        chart = QChart()
-        chart.addSeries(self._series)
-        chart.legend().hide()
-        chart.setBackgroundVisible(False)
-        chart.setBackgroundBrush(QColor(colors.get("background", Theme.SURFACE)))
-        chart.setPlotAreaBackgroundVisible(True)
-        chart.setPlotAreaBackgroundBrush(QColor(Theme.SURFACE_ALT))
-        chart.setBackgroundRoundness(0)
-        chart.setMargins(QMargins(0, 0, 4, 0))
-        chart.layout().setContentsMargins(0, 0, 0, 0)
-        chart.setAnimationOptions(QChart.AnimationOption.NoAnimation)
-
-        axis_x = QValueAxis()
-        axis_x.setRange(0, 60)
-        axis_x.setTickCount(7)
-        axis_x.setLabelFormat("%d")
-        axis_x.setLabelsColor(QColor(colors["label"]))
-        axis_x.setGridLineColor(QColor(colors["grid"]))
-        axis_x.setLineVisible(False)
-
-        axis_y = QValueAxis()
-        axis_y.setRange(0, y_max)
-        axis_y.setTickCount(5)
-        axis_y.setLabelFormat("%d")
-        axis_y.setLabelsColor(QColor(colors["label"]))
-        axis_y.setGridLineColor(QColor(colors["grid"]))
-        axis_y.setLineVisible(False)
-
-        chart.addAxis(axis_x, Qt.AlignmentFlag.AlignBottom)
-        chart.addAxis(axis_y, Qt.AlignmentFlag.AlignLeft)
-        self._series.attachAxis(axis_x)
-        self._series.attachAxis(axis_y)
-
-        pen = QPen(QColor(colors["line"]))
-        pen.setWidthF(2.5)
-        self._series.setPen(pen)
-
         heading = QLabel(title)
         heading.setObjectName("CardTitle")
-        self._view = _ChartView(chart)
-        self._view.setMinimumHeight(_CHART_HEIGHT - 40)
-        self._view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._view.setInteractive(False)
-        self._view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self._view.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self._view = Sparkline(y_max)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(4)
@@ -155,44 +99,32 @@ class HistoryChart(QFrame):
         layout.addWidget(self._view, 1)
 
     def append(self, value: float) -> None:
-        self._history.append(value)
-        self._series.clear()
-        for i, v in enumerate(self._history):
-            self._series.append(i, v)
-
-    def resizeEvent(self, event) -> None:
-        super().resizeEvent(event)
-        chart = self._view.chart()
-        if chart is not None:
-            chart.resize(self._view.size())
-            chart.setPlotArea(QRectF())
-
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        chart = self._view.chart()
-        if chart is not None:
-            chart.resize(self._view.size())
-            chart.setPlotArea(QRectF())
+        self._view.append(value)
 
 
-class MonitorTab(QWidget):
+class MonitorTab(QScrollArea):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setWidgetResizable(False)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._build_ui()
         self._poller = StatsPoller(interval_ms=1000, parent=self)
         self._poller.stats_updated.connect(self._on_stats)
 
-    def _build_ui(self) -> None:
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
-        self.setMinimumHeight(0)
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
 
-        self._scroll = _PageScroll()
+    def sizeHint(self) -> QSize:
+        return QSize(400, 240)
+
+    def _build_ui(self) -> None:
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(0, 0, 8, 8)
+        layout.setContentsMargins(0, 0, 16, 16)
         layout.setSpacing(8)
 
         health = QFrame()
@@ -240,10 +172,7 @@ class MonitorTab(QWidget):
         cards.addWidget(self.tpu_mem_card, 1, 3)
         layout.addLayout(cards)
 
-        chart_wrap = QWidget()
-        chart_wrap.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        charts = QGridLayout(chart_wrap)
-        charts.setContentsMargins(0, 0, 0, 0)
+        charts = QGridLayout()
         charts.setSpacing(8)
         charts.setColumnStretch(0, 1)
         charts.setColumnStretch(1, 1)
@@ -255,10 +184,27 @@ class MonitorTab(QWidget):
         charts.addWidget(self.gpu_chart, 0, 1)
         charts.addWidget(self.npu_chart, 1, 0)
         charts.addWidget(self.tpu_chart, 1, 1)
-        layout.addWidget(chart_wrap)
+        layout.addLayout(charts)
 
-        self._scroll.setWidget(content)
-        outer.addWidget(self._scroll, 1)
+        self.setWidget(content)
+        self._scroll = self
+        self._fit_content_width()
+
+    def _fit_content_width(self) -> None:
+        content = self.widget()
+        if content is None or content.layout() is None:
+            return
+        height = max(content.layout().sizeHint().height(), 720)
+        content.setMinimumHeight(height)
+        content.resize(max(self.viewport().width(), 1), height)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_content_width()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._fit_content_width()
 
     def _on_stats(self, stats: SystemStats) -> None:
         self.cpu_card.set_value(f"{stats.cpu_percent:.1f}%")
