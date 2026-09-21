@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 import json
 import os
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -14,6 +15,7 @@ from finetuner.core.paths import model_download_path
 from finetuner.datasets.presets import get_preset
 from finetuner.eval.tasks import EVAL_TASKS
 from finetuner.training.efficiency import (
+    PAGE_METHODS,
     POLICY_METHODS,
     PREFERENCE_METHODS,
     CellResult,
@@ -26,7 +28,6 @@ from finetuner.training.efficiency import (
     render_markdown,
     run_order,
 )
-from finetuner.training.methods import TRAINING_METHODS
 
 LogFn = Callable[[str], None]
 
@@ -35,7 +36,9 @@ LogFn = Callable[[str], None]
 class SweepConfig:
     model_id: str = "Qwen/Qwen2.5-0.5B-Instruct"
     model_path: str = ""
-    methods: list[str] = field(default_factory=lambda: list(TRAINING_METHODS))
+    methods: list[str] = field(default_factory=lambda: list(PAGE_METHODS))
+    accelerator: str = "cuda"
+    npu_artifact_path: str = ""
     datasets: list[str] = field(default_factory=lambda: ["gsm8k", "hellaswag", "arc_challenge"])
     evals: list[str] = field(default_factory=lambda: ["gsm8k", "hellaswag", "arc_challenge"])
     steps_offline: int = 8
@@ -44,6 +47,7 @@ class SweepConfig:
     max_samples: int = 48
     holdout_samples: int = 8
     bundled_only: bool = False
+    matching_eval_only: bool = False
     allow_cpu: bool = False
     learning_rate: float = 2e-4
     lora_rank: int = 8
@@ -125,16 +129,25 @@ def official_eval_ids(dataset_id: str, eval_ids: list[str]) -> tuple[str, ...]:
 
 
 def plan_cells(config: SweepConfig) -> list[SweepCell]:
-    return run_order(
-        build_cells(
-            config.methods,
-            config.datasets,
-            config.evals,
-            related_evals=related_eval_map(config.datasets),
-            steps_offline=config.steps_offline,
-            steps_online=config.steps_online,
+    related = related_eval_map(config.datasets)
+    cells: list[SweepCell] = []
+    for dataset_id in config.datasets:
+        eval_ids = (
+            [related.get(dataset_id, dataset_id)]
+            if config.matching_eval_only
+            else config.evals
         )
-    )
+        cells.extend(
+            build_cells(
+                config.methods,
+                [dataset_id],
+                eval_ids,
+                related_evals=related,
+                steps_offline=config.steps_offline,
+                steps_online=config.steps_online,
+            )
+        )
+    return run_order(cells)
 
 
 def _write_json(path: Path, payload: dict) -> None:
@@ -158,6 +171,32 @@ def _load_results(path: Path) -> dict[str, CellResult]:
     return loaded
 
 
+def _bundled_text_rows(dataset_id: str, limit: int) -> list[dict]:
+    import json
+
+    from finetuner.core.paths import bundled_assets_dir
+    from finetuner.datasets.presets import FORMATTERS, get_preset
+    from finetuner.datasets.rows import row_to_text
+
+    preset = get_preset(dataset_id)
+    if preset is None or not preset.bundled_filename:
+        raise ValueError(f"Preset {dataset_id} has no bundled sample available.")
+    path = bundled_assets_dir() / "datasets" / preset.bundled_filename
+    if not path.is_file():
+        raise FileNotFoundError(f"Bundled dataset missing: {path}")
+    formatter = FORMATTERS.get(dataset_id)
+    rows: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        text = row_to_text(json.loads(line), formatter)
+        if text:
+            rows.append({"text": text})
+        if limit and len(rows) >= limit:
+            break
+    return rows
+
+
 def materialize_dataset(
     dataset_id: str,
     destination: Path,
@@ -167,17 +206,21 @@ def materialize_dataset(
     bundled_only: bool,
     log: LogFn,
 ) -> tuple[Path, list[dict]]:
-    from finetuner.datasets.loader import load_preset_dataset
-
     train_count = max(1, max_samples)
     extra = max(0, holdout_samples)
-    raw = load_preset_dataset(
-        dataset_id,
-        max_samples=train_count + extra,
-        log=log,
-        bundled_only=bundled_only,
-    )
-    rows = [dict(row) for row in raw]
+    try:
+        from finetuner.datasets.loader import load_preset_dataset
+
+        raw = load_preset_dataset(
+            dataset_id,
+            max_samples=train_count + extra,
+            log=log,
+            bundled_only=bundled_only,
+        )
+        rows = [dict(row) for row in raw]
+    except ImportError:
+        rows = _bundled_text_rows(dataset_id, train_count + extra)
+        log(f"Loaded bundled {dataset_id} without Hugging Face datasets ({len(rows)} rows)")
     if not rows:
         raise ValueError(f"Preset {dataset_id} produced no rows")
     holdout_n = min(extra, max(0, len(rows) - 1))
@@ -299,10 +342,25 @@ def _score_policy(
     holdout: list[dict],
     eval_samples: int,
     log: LogFn,
+    accelerator: str = "cuda",
+    npu_artifact_path: str = "",
 ) -> dict[str, float]:
+    scores: dict[str, float] = {}
+    if accelerator in {"npu", "tpu", "cpu"}:
+        from finetuner.training.accel.evaluate import score_holdout_accel
+
+        adapter_dir = model_path if (Path(model_path) / "npu_adapter.json").is_file() else ""
+        if holdout:
+            scores["holdout"] = score_holdout_accel(
+                holdout,
+                artifact_path=npu_artifact_path or model_path,
+                adapter_dir=adapter_dir,
+                log=log,
+            )
+        return scores
+
     from finetuner.eval.runner import run_evals
 
-    scores: dict[str, float] = {}
     official = [task_id for task_id in eval_ids if task_id in EVAL_TASKS]
     if official:
         try:
@@ -315,7 +373,45 @@ def _score_policy(
     return scores
 
 
+def _score_reward(config: SweepConfig, artifact: str, dataset_path: str, log: LogFn) -> float:
+    if _uses_accel(config):
+        from finetuner.training.accel.evaluate import score_reward_ranking_accel
+        from finetuner.training.dataset_formats import prepare_method_dataset
+
+        path = Path(dataset_path)
+        raw = [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        pairs = prepare_method_dataset(raw, "reward", allow_synthetic_preferences=True)
+        return score_reward_ranking_accel(
+            list(pairs),
+            artifact_path=config.npu_artifact_path or artifact,
+            adapter_dir=artifact,
+            log=log,
+        )
+    return score_reward_ranking(artifact, dataset_path, log)
+
+
+def _uses_accel(config: SweepConfig) -> bool:
+    return (config.accelerator or "cuda") in {"npu", "tpu", "cpu"}
+
+
 def resolve_model_path(config: SweepConfig, log: LogFn) -> str:
+    if _uses_accel(config):
+        from finetuner.training.npu.runtime import resolve_npu_artifact
+
+        try:
+            artifact = resolve_npu_artifact(config.npu_artifact_path or config.model_path)
+            log(f"Accel frozen decoder: {artifact}")
+            return str(artifact)
+        except FileNotFoundError:
+            if config.model_path:
+                path = Path(config.model_path)
+                if path.exists():
+                    return str(path)
+            raise
     if config.model_path:
         path = Path(config.model_path)
         if not path.exists():
@@ -335,7 +431,11 @@ def resolve_model_path(config: SweepConfig, log: LogFn) -> str:
 
 
 def _training_config(config: SweepConfig, cell: SweepCell, reward_model_id: str = "") -> TrainingConfig:
-    seq_length = 128 if cell.is_online else config.max_seq_length
+    seq_length = min(128, config.max_seq_length) if cell.is_online else config.max_seq_length
+    accum = config.gradient_accumulation_steps
+    generations = 2
+    if cell.is_online and (config.batch_size * accum) % generations != 0:
+        accum = generations
     return TrainingConfig(
         training_method=cell.method,
         reward_function="exact_match",
@@ -345,11 +445,13 @@ def _training_config(config: SweepConfig, cell: SweepCell, reward_model_id: str 
         lora_rank=config.lora_rank,
         lora_alpha=config.lora_alpha,
         batch_size=config.batch_size,
-        gradient_accumulation_steps=config.gradient_accumulation_steps,
+        gradient_accumulation_steps=accum,
         max_seq_length=seq_length,
         use_qlora=False,
         allow_synthetic_preferences=cell.method in PREFERENCE_METHODS,
         grpo_num_generations=2,
+        accelerator=config.accelerator,
+        npu_artifact_path=config.npu_artifact_path,
         seed=42,
     )
 
@@ -394,10 +496,27 @@ def run_cell(
         logs.append(message)
         log(message)
 
+    class _Tee:
+        def __init__(self, stream) -> None:
+            self.stream = stream
+
+        def write(self, chunk: str) -> int:
+            if chunk:
+                logs.append(chunk)
+            return self.stream.write(chunk)
+
+        def flush(self) -> None:
+            self.stream.flush()
+
+        def __getattr__(self, name: str):
+            return getattr(self.stream, name)
+
     monitor = ResourceMonitor()
     monitor.start()
     started = time.monotonic()
+    stdout = sys.stdout
     try:
+        sys.stdout = _Tee(stdout)  # type: ignore[assignment]
         training = _training_config(config, cell, reward_model_id)
         artifact = train(
             model_path=model_path,
@@ -413,11 +532,12 @@ def run_cell(
         result.final_loss = loss
         result.steps = steps or cell.max_steps
         result.examples = training.max_steps * training.batch_size * training.gradient_accumulation_steps
-        result.artifact_bytes = directory_bytes(Path(artifact))
+        adapter = Path(artifact).parent / "adapter"
+        result.artifact_bytes = directory_bytes(adapter if adapter.is_dir() else Path(artifact))
         eval_started = time.monotonic()
         if cell.method == "reward":
             result.scores = {
-                "reward_ranking": score_reward_ranking(artifact, str(dataset_path), captured)
+                "reward_ranking": _score_reward(config, artifact, str(dataset_path), captured)
             }
         elif cell.method in POLICY_METHODS:
             result.scores = _score_policy(
@@ -426,6 +546,8 @@ def run_cell(
                 holdout,
                 config.eval_samples,
                 captured,
+                accelerator=config.accelerator,
+                npu_artifact_path=config.npu_artifact_path or model_path,
             )
         result.eval_seconds = round(time.monotonic() - eval_started, 3)
         result.status = "completed"
@@ -435,13 +557,13 @@ def run_cell(
         result.error = f"{type(exc).__name__}: {exc}"
         captured(f"ERROR {cell.key}: {result.error}")
     finally:
+        sys.stdout = stdout
         result.peak_ram_gb, result.peak_gpu_gb = monitor.stop()
         _release_memory()
     return finalize_cell(result)
 
 
 def run_sweep(config: SweepConfig, log: LogFn | None = None) -> dict:
-    logger = log or print
     if config.allow_cpu:
         os.environ["FINETUNER_ALLOW_CPU_TRAIN"] = "1"
 
@@ -449,12 +571,38 @@ def run_sweep(config: SweepConfig, log: LogFn | None = None) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     results_path = output_dir / "results.json"
     report_path = output_dir / "report.md"
+    baseline_path = output_dir / "baselines.json"
+    log_path = output_dir / "sweep.log"
+    try:
+        log_handle = log_path.open("a", encoding="utf-8")
+    except OSError:
+        log_handle = (output_dir / "sweep-run.log").open("a", encoding="utf-8")
+
+    def logger(message: str) -> None:
+        print(message, flush=True)
+        try:
+            log_handle.write(message + "\n")
+            log_handle.flush()
+        except OSError:
+            pass
+        if log:
+            try:
+                log(message)
+            except Exception:
+                pass
     cells = plan_cells(config)
     logger(f"Sweep: {len(cells)} cells -> {output_dir}")
 
     model_path = resolve_model_path(config, logger)
     existing = _load_results(results_path) if config.resume else {}
     baselines: dict[str, dict[str, float]] = {}
+    if config.resume and baseline_path.is_file():
+        try:
+            loaded = json.loads(baseline_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                baselines.update({key: dict(value) for key, value in loaded.items() if isinstance(value, dict)})
+        except (OSError, json.JSONDecodeError):
+            pass
     reward_by_dataset: dict[str, str] = {}
     holdouts: dict[str, list[dict]] = {}
     dataset_paths: dict[str, Path] = {}
@@ -464,7 +612,7 @@ def run_sweep(config: SweepConfig, log: LogFn | None = None) -> dict:
         payload = {
             "model_id": config.model_id,
             "model_path": model_path,
-            "device": "cpu" if config.allow_cpu else "cuda",
+            "device": config.accelerator if _uses_accel(config) else ("cpu" if config.allow_cpu else "cuda"),
             "results": [item.to_dict() for item in completed],
         }
         _write_json(results_path, payload)
@@ -488,7 +636,7 @@ def run_sweep(config: SweepConfig, log: LogFn | None = None) -> dict:
         )
         dataset_paths[dataset_id] = data_path
         holdouts[dataset_id] = holdout
-        cached_baseline = next(
+        cached_baseline = baselines.get(dataset_id) or next(
             (
                 item.baseline_scores
                 for item in existing.values()
@@ -501,14 +649,23 @@ def run_sweep(config: SweepConfig, log: LogFn | None = None) -> dict:
             logger(f"Reusing baseline scores for {dataset_id}")
         else:
             logger(f"Evaluating baseline on {dataset_id}")
+            baseline_evals = (
+                (related_eval_map([dataset_id]).get(dataset_id, ""),)
+                if config.matching_eval_only
+                else official_eval_ids(dataset_id, config.evals)
+            )
+            baseline_evals = tuple(task for task in baseline_evals if task in EVAL_TASKS)
             baselines[dataset_id] = _score_policy(
                 model_path,
-                official_eval_ids(dataset_id, config.evals),
+                baseline_evals,
                 holdout,
                 config.eval_samples,
                 logger,
+                accelerator=config.accelerator,
+                npu_artifact_path=config.npu_artifact_path or model_path,
             )
             _release_memory()
+        _write_json(baseline_path, baselines)
 
     for cell in cells:
         key = cell.key
@@ -540,7 +697,7 @@ def run_sweep(config: SweepConfig, log: LogFn | None = None) -> dict:
     payload = {
         "model_id": config.model_id,
         "model_path": model_path,
-        "device": "cpu" if config.allow_cpu else "cuda",
+        "device": config.accelerator if _uses_accel(config) else ("cpu" if config.allow_cpu else "cuda"),
         "output_dir": str(output_dir),
         "results": [item.to_dict() for item in completed],
         "report_path": str(report_path),
@@ -548,4 +705,5 @@ def run_sweep(config: SweepConfig, log: LogFn | None = None) -> dict:
     persist()
     logger(f"Wrote {results_path}")
     logger(f"Wrote {report_path}")
+    log_handle.close()
     return payload

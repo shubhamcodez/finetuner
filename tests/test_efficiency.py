@@ -122,3 +122,13 @@ def test_plan_cells_covers_each_method_once_per_dataset():
     assert len(keys) == 16
     assert len(set(keys)) == 16
     assert official_eval_ids("gsm8k", ["hellaswag", "gsm8k"])[0] == "gsm8k"
+    matching = plan_cells(
+        SweepConfig(
+            methods=["sft"],
+            datasets=["gsm8k", "hellaswag"],
+            evals=["gsm8k", "hellaswag", "arc_challenge"],
+            matching_eval_only=True,
+        )
+    )
+    assert matching[0].eval_ids == ("gsm8k",)
+    assert matching[1].eval_ids == ("hellaswag",)

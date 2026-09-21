@@ -65,6 +65,24 @@ TRAINING_METHODS: dict[str, TrainingMethodSpec] = {
         uses_reward=True,
         family="online",
     ),
+    "npu": TrainingMethodSpec(
+        method_id="npu",
+        name="NPU SFT",
+        description=(
+            "Shortcut for SFT on the NPU/TPU engine: frozen ONNX decoder "
+            "(Hexagon HTP when present) plus CPU logit LoRA. No backprop through HTP."
+        ),
+        family="npu",
+    ),
+    "tpu": TrainingMethodSpec(
+        method_id="tpu",
+        name="TPU SFT",
+        description=(
+            "Shortcut for SFT on the accelerator engine: frozen ONNX decoder "
+            "plus logit LoRA. Uses a Cloud/Coral TPU when one is visible; otherwise host CPU."
+        ),
+        family="tpu",
+    ),
 }
 
 

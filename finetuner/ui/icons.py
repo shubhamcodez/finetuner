@@ -14,7 +14,6 @@ import qtawesome as qta
 _PHOSPHOR = {
     "project": "ph.squares-four",
     "models": "ph.cube",
-    "data": "ph.database",
     "training": "ph.play-circle",
     "distillation": "ph.git-branch",
     "evaluation": "ph.chart-line",

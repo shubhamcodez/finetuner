@@ -35,9 +35,24 @@ def main() -> int:
     parser.add_argument("--max-samples", type=int, default=48)
     parser.add_argument("--holdout-samples", type=int, default=8)
     parser.add_argument("--bundled-only", action="store_true")
+    parser.add_argument(
+        "--matching-eval",
+        action="store_true",
+        help="Score each run only on the dataset's paired benchmark plus holdout",
+    )
     parser.add_argument("--allow-cpu", action="store_true")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--no-resume", action="store_true")
+    parser.add_argument("--seq-length", type=int, default=256)
+    parser.add_argument("--grad-accum", type=int, default=4)
+    parser.add_argument("--lora-rank", type=int, default=8)
+    parser.add_argument(
+        "--accelerator",
+        default="cuda",
+        choices=("cuda", "npu", "tpu", "cpu", "auto"),
+        help="cuda uses TRL; npu/tpu/cpu use the frozen-ONNX + logit LoRA engine",
+    )
+    parser.add_argument("--npu-artifact", default="")
     args = parser.parse_args()
 
     config = SweepConfig(
@@ -52,9 +67,16 @@ def main() -> int:
         max_samples=args.max_samples,
         holdout_samples=args.holdout_samples,
         bundled_only=args.bundled_only,
+        matching_eval_only=args.matching_eval,
         allow_cpu=args.allow_cpu,
         output_dir=args.output_dir,
         resume=not args.no_resume,
+        max_seq_length=args.seq_length,
+        gradient_accumulation_steps=args.grad_accum,
+        lora_rank=args.lora_rank,
+        lora_alpha=max(16, args.lora_rank * 2),
+        accelerator=args.accelerator,
+        npu_artifact_path=args.npu_artifact,
     )
     payload = run_sweep(config)
     failed = [row for row in payload["results"] if row["status"] == "failed"]
@@ -63,4 +85,10 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception:
+        import traceback
+
+        traceback.print_exc()
+        raise

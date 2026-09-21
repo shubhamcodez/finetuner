@@ -3,31 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from trl import (
-    DPOConfig,
-    DPOTrainer,
-    GRPOConfig,
-    GRPOTrainer,
-    RewardConfig,
-    RewardTrainer,
-    SFTConfig,
-    SFTTrainer,
-)
-
 from finetuner.core.job import TrainingConfig
-from finetuner.training.common import (
-    base_training_kwargs,
-    detect_text_field,
-    load_lora_model,
-    load_raw_dataset,
-    load_tokenizer,
-    require_cuda,
-    save_and_merge,
-    train_runtime,
-)
 from finetuner.training.dataset_formats import prepare_method_dataset
 from finetuner.training.methods import get_method
-from finetuner.training.rewards import build_reward_function
 from finetuner.training.validation import validate_training_config
 
 
@@ -50,15 +28,36 @@ def train(
     if config_errors:
         raise ValueError("; ".join(config_errors))
 
-    require_cuda()
-    runtime = train_runtime()
+    from finetuner.training.accel.detect import resolve_accelerator, uses_accel_engine
+
+    accelerator = resolve_accelerator(training)
+    if uses_accel_engine(training):
+        runtime = {"device": accelerator}
+    else:
+        from finetuner.training.common import require_cuda, train_runtime
+
+        require_cuda()
+        runtime = train_runtime()
     log(f"Training method: {spec.name} — {spec.description}")
     log(f"Device: {runtime['device']}")
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    log(f"Loading tokenizer from {model_path}")
-    tokenizer = load_tokenizer(model_path)
+    if uses_accel_engine(training):
+        from finetuner.training.accel.engine import train_accel
+
+        raw = _load_accel_rows(dataset_path)
+        dataset = prepare_method_dataset(
+            raw,
+            method,
+            allow_synthetic_preferences=training.allow_synthetic_preferences,
+            seed=training.seed,
+        )
+        log(f"Dataset size: {len(dataset)} examples ({method} format)")
+        log(f"Using NPU/TPU accelerator engine ({accelerator})")
+        return train_accel(model_path, str(out), training, dataset, log)
+
+    from finetuner.training.common import load_raw_dataset, load_tokenizer
 
     raw = load_raw_dataset(dataset_path, training=training, log=log)
     dataset = prepare_method_dataset(
@@ -68,6 +67,8 @@ def train(
         seed=training.seed,
     )
     log(f"Dataset size: {len(dataset)} examples ({method} format)")
+    log(f"Loading tokenizer from {model_path}")
+    tokenizer = load_tokenizer(model_path)
 
     if method == "sft":
         return _train_sft(model_path, training, dataset, tokenizer, out, log)
@@ -86,6 +87,26 @@ def train(
     if method == "rloo":
         return _train_rloo(model_path, training, dataset, tokenizer, out, log)
     raise ValueError(f"Unsupported training method: {method}")
+
+
+def _load_accel_rows(dataset_path: str) -> list[dict]:
+    import json
+
+    path = Path(dataset_path)
+    if path.is_file() and path.suffix == ".jsonl":
+        rows = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                rows.append(json.loads(line))
+        if rows:
+            return rows
+    if path.is_file() and path.suffix == ".json":
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(payload, list):
+            return payload
+    from finetuner.training.common import load_raw_dataset
+
+    return [dict(row) for row in load_raw_dataset(dataset_path)]
 
 
 def train_sft(
@@ -108,6 +129,15 @@ def train_sft(
 
 
 def _train_sft(model_path, training, dataset, tokenizer, out, log):
+    from trl import SFTConfig, SFTTrainer
+
+    from finetuner.training.common import (
+        base_training_kwargs,
+        detect_text_field,
+        load_lora_model,
+        save_and_merge,
+    )
+
     model = load_lora_model(model_path, training, log)
     text_field = detect_text_field(dataset)
     log(f"Using text field: {text_field}")
@@ -131,12 +161,15 @@ def _train_sft(model_path, training, dataset, tokenizer, out, log):
 
 
 def _train_dpo(model_path, training, dataset, tokenizer, out, log):
+    from trl import DPOConfig, DPOTrainer
+
+    from finetuner.training.common import base_training_kwargs, load_lora_model, save_and_merge
+
     model = load_lora_model(model_path, training, log)
     dpo_config = DPOConfig(
         **base_training_kwargs(training, out),
         beta=training.dpo_beta,
         max_length=training.max_seq_length,
-        max_prompt_length=min(512, training.max_seq_length // 2),
     )
     trainer = DPOTrainer(
         model=model,
@@ -151,6 +184,11 @@ def _train_dpo(model_path, training, dataset, tokenizer, out, log):
 
 
 def _train_grpo(model_path, training, dataset, tokenizer, out, log):
+    from trl import GRPOConfig, GRPOTrainer
+
+    from finetuner.training.common import base_training_kwargs, load_lora_model, save_and_merge
+    from finetuner.training.rewards import build_reward_function
+
     model = load_lora_model(model_path, training, log)
     num_gen = training.grpo_num_generations
     effective_batch = training.batch_size * training.gradient_accumulation_steps
@@ -188,6 +226,8 @@ def _train_grpo(model_path, training, dataset, tokenizer, out, log):
 def _train_kto(model_path, training, dataset, tokenizer, out, log):
     from trl import KTOConfig, KTOTrainer
 
+    from finetuner.training.common import base_training_kwargs, load_lora_model, save_and_merge
+
     model = load_lora_model(model_path, training, log)
     kto_config = KTOConfig(
         **base_training_kwargs(training, out),
@@ -208,6 +248,9 @@ def _train_kto(model_path, training, dataset, tokenizer, out, log):
 
 def _train_reward(model_path, training, dataset, tokenizer, out, log):
     from transformers import AutoModelForSequenceClassification
+    from trl import RewardConfig, RewardTrainer
+
+    from finetuner.training.common import base_training_kwargs, train_runtime
 
     runtime = train_runtime()
     log("Loading base model for reward-model training...")
@@ -245,6 +288,8 @@ def _train_ppo(model_path, training, dataset, tokenizer, out, log):
     from peft import LoraConfig
     from transformers import AutoModelForCausalLM, AutoModelForSequenceClassification
     from trl.experimental.ppo import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer
+
+    from finetuner.training.common import train_runtime
 
     if not training.reward_model_id:
         raise ValueError(
@@ -339,6 +384,8 @@ def _train_orpo(model_path, training, dataset, tokenizer, out, log):
     except ImportError as exc:
         raise RuntimeError("ORPO requires a TRL build containing trl.experimental.orpo") from exc
 
+    from finetuner.training.common import base_training_kwargs, load_lora_model, save_and_merge
+
     model = load_lora_model(model_path, training, log)
     config = ORPOConfig(
         **base_training_kwargs(training, out),
@@ -358,6 +405,9 @@ def _train_orpo(model_path, training, dataset, tokenizer, out, log):
 
 def _train_rloo(model_path, training, dataset, tokenizer, out, log):
     from trl import RLOOConfig, RLOOTrainer
+
+    from finetuner.training.common import base_training_kwargs, load_lora_model, save_and_merge
+    from finetuner.training.rewards import build_reward_function
 
     model = load_lora_model(model_path, training, log)
     reward_func = build_reward_function(

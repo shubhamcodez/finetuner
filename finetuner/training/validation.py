@@ -33,6 +33,10 @@ def validate_training_config(config: TrainingConfig, method_id: str | None = Non
         errors.append("DPO/KTO beta must be positive")
     if config.grpo_num_generations <= 0:
         errors.append("online RL generations must be positive")
+    from finetuner.training.accel.detect import uses_accel_engine
+
+    if uses_accel_engine(config) and config.use_qlora:
+        errors.append("The NPU/TPU engine does not use QLoRA; disable it")
     if method in {"grpo", "rloo"}:
         effective_batch = config.batch_size * config.gradient_accumulation_steps
         if effective_batch % config.grpo_num_generations != 0:

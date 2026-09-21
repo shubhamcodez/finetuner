@@ -18,7 +18,6 @@ from finetuner.ui.theme import Token
 PRIMARY_NAV = (
     ("project", "Project", "project"),
     ("models", "Models", "models"),
-    ("data", "Data", "data"),
     ("training", "Finetune", "training"),
     ("distillation", "Distillation", "distillation"),
     ("evals", "Evaluation", "evaluation"),
@@ -37,7 +36,6 @@ BOTTOM_NAV = (
 PAGE_COPY = {
     "project": ("PROJECT", "Build, evaluate, and deploy your model", "A seamless workflow for modern model development."),
     "models": ("MODELS", "Model registry", "Queue local or Hugging Face checkpoints for every tool."),
-    "data": ("DATA", "Datasets", "Choose a preset, local JSONL, or Hugging Face dataset."),
     "training": ("FINETUNE", "Finetune model", "Fine-tune a queued model with the selected method and data."),
     "distillation": ("DISTILLATION", "Distill a teacher into a student", "Transfer behavior from a larger model into a smaller one."),
     "evals": ("EVALUATION", "Evaluate models", "Score queued models on shared benchmarks."),

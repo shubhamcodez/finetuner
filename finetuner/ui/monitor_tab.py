@@ -3,13 +3,14 @@ from __future__ import annotations
 from collections import deque
 
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
-from PySide6.QtCore import QMargins, QRectF, Qt
+from PySide6.QtCore import QEvent, QMargins, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -17,6 +18,53 @@ from PySide6.QtWidgets import (
 
 from finetuner.monitor.stats import StatsPoller, SystemStats
 from finetuner.ui.theme import Theme, chart_colors
+
+_CHART_HEIGHT = 260
+
+
+class _PageScroll(QScrollArea):
+    """A scroll area that can shrink below its contents so the page actually scrolls."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, 0)
+
+    def sizeHint(self) -> QSize:
+        return QSize(400, 240)
+
+
+class _ChartView(QChartView):
+    """Scroll the page instead of eating the wheel as a graphics-view pan."""
+
+    def wheelEvent(self, event) -> None:
+        area = self._scroll_area()
+        if area is None:
+            event.ignore()
+            return
+        bar = area.verticalScrollBar()
+        bar.setValue(bar.value() - event.angleDelta().y())
+        event.accept()
+
+    def viewportEvent(self, event) -> bool:
+        if event.type() == QEvent.Type.Wheel:
+            self.wheelEvent(event)
+            return True
+        return super().viewportEvent(event)
+
+    def _scroll_area(self) -> QScrollArea | None:
+        parent = self.parentWidget()
+        while parent is not None:
+            if isinstance(parent, QScrollArea):
+                return parent
+            parent = parent.parentWidget()
+        return None
 
 
 class MetricCard(QFrame):
@@ -47,7 +95,8 @@ class HistoryChart(QFrame):
     def __init__(self, title: str, y_max: float = 100.0, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("SurfaceCard")
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setFixedHeight(_CHART_HEIGHT)
         colors = chart_colors()
         self._series = QLineSeries()
         self._history: deque[float] = deque(maxlen=60)
@@ -91,8 +140,12 @@ class HistoryChart(QFrame):
 
         heading = QLabel(title)
         heading.setObjectName("CardTitle")
-        self._view = QChartView(chart)
-        self._view.setMinimumHeight(180)
+        self._view = _ChartView(chart)
+        self._view.setMinimumHeight(_CHART_HEIGHT - 40)
+        self._view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._view.setInteractive(False)
         self._view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._view.setRenderHint(QPainter.RenderHint.Antialiasing)
         layout = QVBoxLayout(self)
@@ -100,7 +153,6 @@ class HistoryChart(QFrame):
         layout.setSpacing(4)
         layout.addWidget(heading)
         layout.addWidget(self._view, 1)
-        self.setMinimumHeight(210)
 
     def append(self, value: float) -> None:
         self._history.append(value)
@@ -131,9 +183,16 @@ class MonitorTab(QWidget):
         self._poller.stats_updated.connect(self._on_stats)
 
     def _build_ui(self) -> None:
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        self.setMinimumHeight(0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self._scroll = _PageScroll()
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(0, 0, 8, 8)
         layout.setSpacing(8)
 
         health = QFrame()
@@ -182,12 +241,10 @@ class MonitorTab(QWidget):
         layout.addLayout(cards)
 
         chart_wrap = QWidget()
-        chart_wrap.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        chart_wrap.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         charts = QGridLayout(chart_wrap)
         charts.setContentsMargins(0, 0, 0, 0)
         charts.setSpacing(8)
-        charts.setRowStretch(0, 1)
-        charts.setRowStretch(1, 1)
         charts.setColumnStretch(0, 1)
         charts.setColumnStretch(1, 1)
         self.cpu_chart = HistoryChart("CPU History", y_max=100)
@@ -198,7 +255,10 @@ class MonitorTab(QWidget):
         charts.addWidget(self.gpu_chart, 0, 1)
         charts.addWidget(self.npu_chart, 1, 0)
         charts.addWidget(self.tpu_chart, 1, 1)
-        layout.addWidget(chart_wrap, 1)
+        layout.addWidget(chart_wrap)
+
+        self._scroll.setWidget(content)
+        outer.addWidget(self._scroll, 1)
 
     def _on_stats(self, stats: SystemStats) -> None:
         self.cpu_card.set_value(f"{stats.cpu_percent:.1f}%")

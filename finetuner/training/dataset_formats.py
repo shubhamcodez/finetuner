@@ -2,7 +2,22 @@ from __future__ import annotations
 
 import hashlib
 
-from datasets import Dataset
+
+def _column_names(dataset) -> set[str]:
+    if hasattr(dataset, "column_names"):
+        return set(dataset.column_names)
+    if not dataset:
+        return set()
+    first = dataset[0] if not hasattr(dataset, "to_list") else dataset[0]
+    return set(first) if isinstance(first, dict) else set()
+
+
+def _wrap_rows(dataset, rows: list[dict]):
+    if hasattr(dataset, "column_names"):
+        from datasets import Dataset
+
+        return Dataset.from_list(rows)
+    return rows
 
 
 def split_instruction_response(text: str) -> tuple[str, str]:
@@ -90,36 +105,39 @@ def prepare_method_dataset(
     allow_synthetic_preferences: bool = False,
     seed: int = 42,
 ) -> Dataset:
-    if method == "sft":
-        if "text" in dataset.column_names or "messages" in dataset.column_names:
+    columns = _column_names(dataset)
+    if method in {"sft", "npu", "tpu"}:
+        if "text" in columns or "messages" in columns:
             return dataset
-        if {"prompt", "chosen"}.issubset(dataset.column_names):
-            return Dataset.from_list(
+        if {"prompt", "chosen"}.issubset(columns):
+            return _wrap_rows(
+                dataset,
                 [
                     {"text": f"{row['prompt']}\n{row['chosen']}"}
                     for row in dataset
                     if row.get("prompt") and row.get("chosen")
-                ]
+                ],
             )
-        if {"prompt", "response"}.issubset(dataset.column_names):
-            return Dataset.from_list(
+        if {"prompt", "response"}.issubset(columns):
+            return _wrap_rows(
+                dataset,
                 [
                     {"text": f"{row['prompt']}\n{row['response']}"}
                     for row in dataset
                     if row.get("prompt") and row.get("response")
-                ]
+                ],
             )
         return dataset
     if method in ("grpo", "ppo", "rloo"):
-        if "prompt" in dataset.column_names:
+        if "prompt" in columns:
             return dataset
         rows = sft_to_prompt_rows(dataset)
         if not rows:
             raise ValueError("Could not extract prompts from the dataset for RL training.")
-        return Dataset.from_list(rows)
+        return _wrap_rows(dataset, rows)
     if method in ("dpo", "reward", "orpo"):
         required = {"prompt", "chosen", "rejected"}
-        if required.issubset(dataset.column_names):
+        if required.issubset(columns):
             return dataset
         if not allow_synthetic_preferences:
             raise ValueError(
@@ -129,10 +147,10 @@ def prepare_method_dataset(
         rows = sft_to_dpo_rows(dataset, seed)
         if not rows:
             raise ValueError("Could not build preference pairs from the dataset.")
-        return Dataset.from_list(rows)
+        return _wrap_rows(dataset, rows)
     if method == "kto":
         required = {"prompt", "completion", "label"}
-        if required.issubset(dataset.column_names):
+        if required.issubset(columns):
             return dataset
         if not allow_synthetic_preferences:
             raise ValueError(
@@ -141,5 +159,5 @@ def prepare_method_dataset(
         rows = sft_to_kto_rows(dataset, seed)
         if not rows:
             raise ValueError("Could not build KTO examples from the dataset.")
-        return Dataset.from_list(rows)
+        return _wrap_rows(dataset, rows)
     raise ValueError(f"Unsupported training method: {method}")

@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -146,7 +147,6 @@ class MainWindow(QMainWindow):
         self._page_by_area = {
             "project": self.project_tab,
             "models": self.models_tab,
-            "data": self.training_tab,
             "training": self.training_tab,
             "distillation": self.distillation_tab,
             "evals": self.evals_tab,
@@ -191,6 +191,8 @@ class MainWindow(QMainWindow):
         self._workspace_layout.addLayout(top)
 
         self.pages = QStackedWidget()
+        self.pages.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.pages.setMinimumHeight(0)
         seen: set[int] = set()
         for page in self._page_by_area.values():
             if id(page) in seen:

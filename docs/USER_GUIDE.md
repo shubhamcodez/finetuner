@@ -197,7 +197,18 @@ Online methods (GRPO, PPO, RLOO) need a `prompt` column, or SFT-style text that 
 | **Reward Model** | Preference pairs | Trains a Bradley–Terry scorer |
 | **GRPO** | Prompts + reward | On-policy rollouts; set **GRPO gens** |
 | **RLOO** | Prompts + reward | Online REINFORCE leave-one-out |
-| **PPO** | Prompts + reward model | Requires a **Reward model** id |
+| **PPO** | Prompts + reward model | Requires a **Reward model** id on CUDA/TRL. The NPU/TPU engine uses the selected reward function instead. |
+| **NPU SFT / TPU SFT** | Instruction–response pairs | Shortcuts for SFT on the accelerator engine. |
+
+### NPU / TPU engine
+
+Set **Accelerator** to **NPU engine**, **TPU engine**, **CPU engine**, or **Auto**. Every Finetune method (SFT, DPO, KTO, ORPO, Reward, GRPO, RLOO, PPO) then runs on a frozen ONNX decoder plus a small logit LoRA:
+
+- The NPU (Qualcomm Hexagon HTP via QNN, or ONNX CPU if QNN is missing) only produces base logits.
+- A Cloud or Coral TPU is used when one is visible; otherwise the adapter trains on the host.
+- There is **no backpropagation through Hexagon or the TPU**. The trainable A/B matrices live outside the frozen graph.
+
+Point **ONNX artifact** at a GenAI/QNN package, or leave it blank to use `~/.finetuner/bench/models/qwen2.5-0.5b-instruct-onnx-genai`. QLoRA is disabled on this path.
 
 **Allow synthetic negative preferences** is off by default and marked research-only. Turning it on invents rejected answers from SFT text. Do not use that for production preference runs.
 

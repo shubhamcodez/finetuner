@@ -21,6 +21,8 @@ def test_config_round_trip_includes_product_pipelines():
     assert restored.inference.engine == "vllm"
     assert restored.inference.serve_port == 1234
     assert restored.training.lora_target_modules == ["q_proj", "v_proj"]
+    config.training.accelerator = "npu"
+    assert ProjectConfig.from_dict(config.to_dict()).training.accelerator == "npu"
     assert "workflow" not in config.to_dict()
 
 

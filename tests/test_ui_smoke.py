@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication, QFrame, QLabel
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QScrollArea
 
 from finetuner.core.job import ModelRunResult, ProjectConfig
 from finetuner.monitor.stats import SystemStats
 from finetuner.ui.analysis_tab import AnalysisTab
 from finetuner.ui.deployment_tab import DeploymentTab
 from finetuner.ui.distillation_tab import DistillationTab
+from finetuner.inference.planner import AcceleratorInventory
 from finetuner.ui.inference_tab import InferenceTab
 from finetuner.core.hf_trending import HubModel
 from finetuner.ui.models_tab import AddModelDialog, HubModelCard
@@ -152,4 +153,41 @@ def test_system_tab_renders_npu_stats(app):
     assert "Coral" in tab.tpu_card.detail_label.text()
     assert tab.cpu_chart._view.minimumHeight() >= 180
     assert tab.npu_chart._view.minimumHeight() >= 180
+    assert tab.findChild(QScrollArea) is not None
+    tab.resize(800, 360)
+    tab.show()
+    app.processEvents()
+    assert tab._scroll.verticalScrollBar().maximum() > 0
     tab.shutdown()
+    tab.close()
+
+
+@pytest.mark.ui
+def test_inference_page_enables_only_detected_methods(app, monkeypatch):
+    monkeypatch.setattr(
+        "finetuner.inference.planner.detect_accelerator_inventory",
+        lambda: AcceleratorInventory(1, "cuda", 12.0, ("RTX 4070",)),
+    )
+    tab = InferenceTab(ProjectConfig())
+    tab._set_advanced_visible(True)
+    tab.engine.setCurrentIndex(max(0, tab.engine.findData("vllm")))
+    tab.target.setCurrentIndex(max(0, tab.target.findData("nvidia_gpu")))
+    tab._apply_features(auto_fill=True)
+    assert tab.advanced_form.isRowVisible(tab.tensor_parallel)
+    assert not tab.tensor_parallel.isEnabled()
+    assert tab.cuda_graphs.isEnabled()
+    assert not tab.flash_attention.isVisible()
+
+    monkeypatch.setattr(
+        "finetuner.inference.planner.detect_accelerator_inventory",
+        lambda: AcceleratorInventory(4, "cuda", 80.0, ("A100", "A100", "A100", "A100")),
+    )
+    tab._apply_features(auto_fill=True)
+    assert tab.tensor_parallel.isEnabled()
+    assert tab.tensor_parallel.value() == 4
+
+    tab.engine.setCurrentIndex(max(0, tab.engine.findData("llamacpp")))
+    tab.target.setCurrentIndex(max(0, tab.target.findData("cpu")))
+    assert not tab.advanced_form.isRowVisible(tab.tensor_parallel)
+    assert not tab.cuda_graphs.isVisible()
+    tab.close()

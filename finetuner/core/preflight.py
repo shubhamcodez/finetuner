@@ -53,8 +53,21 @@ def collect_action_issues(config: ProjectConfig, action: ActionKind | str) -> li
     if spec.action == ActionKind.TRAIN:
         for message in validate_training_config(config.training):
             add(message)
-        if config.training.training_method == "ppo" and not config.training.reward_model_id.strip():
+        from finetuner.training.accel.detect import uses_accel_engine
+
+        if (
+            config.training.training_method == "ppo"
+            and not uses_accel_engine(config.training)
+            and not config.training.reward_model_id.strip()
+        ):
             add("PPO needs a Training Reward Model ID")
+        if uses_accel_engine(config.training):
+            from finetuner.training.npu.runtime import resolve_npu_artifact
+
+            try:
+                resolve_npu_artifact(config.training.npu_artifact_path)
+            except FileNotFoundError as exc:
+                add(str(exc))
     elif spec.action == ActionKind.DISTILL:
         for message in config.distillation.validate():
             add(message)

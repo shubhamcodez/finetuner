@@ -68,6 +68,8 @@ class TrainingConfig:
     max_seq_length: int = 2048
     use_qlora: bool = True
     allow_synthetic_preferences: bool = False
+    accelerator: str = "cuda"
+    npu_artifact_path: str = ""
     seed: int = 42
 
 
@@ -139,6 +141,8 @@ class ProjectConfig:
                 "max_seq_length": self.training.max_seq_length,
                 "use_qlora": self.training.use_qlora,
                 "allow_synthetic_preferences": self.training.allow_synthetic_preferences,
+                "accelerator": self.training.accelerator,
+                "npu_artifact_path": self.training.npu_artifact_path,
                 "seed": self.training.seed,
             },
             "enabled_evals": self.enabled_evals,

@@ -14,10 +14,12 @@ from finetuner.inference.devices import (
     select_best_runtime,
 )
 from finetuner.inference.planner import (
+    AcceleratorInventory,
     backend_engine_compatibility_error,
     compatible_engines,
     estimate_kv_cache_bytes,
     recommended_config,
+    runtime_features,
 )
 from finetuner.inference.runner import (
     build_compile_commands,
@@ -322,6 +324,40 @@ def test_optimize_action_uses_the_selected_model(monkeypatch, tmp_path):
     )
     assert seen == ["/quantized"]
     assert "inference_engine" in output.artifacts
+
+
+def test_runtime_features_detect_tensor_parallel_and_related_methods():
+    one = AcceleratorInventory(1, "cuda", 24.0, ("RTX 4090",))
+    many = AcceleratorInventory(4, "cuda", 80.0, ("A100", "A100", "A100", "A100"))
+
+    blocked = runtime_features("vllm", "nvidia_gpu", one)
+    assert blocked.tensor_parallel.supported
+    assert not blocked.tensor_parallel.available
+    assert blocked.tensor_parallel.value == 1
+    assert "2+" in blocked.tensor_parallel.reason
+    assert blocked.cuda_graphs.available
+    assert blocked.gpu_memory_fraction.available
+    assert not blocked.flash_attention.supported
+
+    ready = runtime_features("vllm", "nvidia_gpu", many)
+    assert ready.tensor_parallel.available
+    assert ready.tensor_parallel.value == 4
+
+    cpu = runtime_features("llamacpp", "cpu", many)
+    assert not cpu.tensor_parallel.supported
+    assert not cpu.cuda_graphs.supported
+    assert cpu.prefix_caching.available
+    assert not cpu.flash_attention.available
+
+
+def test_recommended_vllm_uses_detected_gpu_count(monkeypatch):
+    monkeypatch.setattr(
+        "finetuner.inference.planner.detect_accelerator_inventory",
+        lambda: AcceleratorInventory(2, "cuda", 48.0, ("A6000", "A6000")),
+    )
+    config = recommended_config(DeviceTarget.NVIDIA_GPU, vllm_available=True)
+    assert config.tensor_parallel == 2
+    assert config.engine == "vllm"
 
 
 def test_kv_cache_estimate_scales_with_batch_and_context():

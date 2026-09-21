@@ -29,3 +29,5 @@ def test_sweep_defaults_validate_for_every_page_method():
     )
     for method in PAGE_METHODS:
         assert validate_training_config(config, method) == []
+    assert validate_training_config(config, "npu") == []
+    assert validate_training_config(config, "tpu") == []

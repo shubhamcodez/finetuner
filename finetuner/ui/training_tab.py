@@ -141,7 +141,20 @@ class TrainingTab(QWidget):
             self.method_combo.setItemData(idx, spec.description, Qt.ItemDataRole.ToolTipRole)
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         method_grid.addWidget(QLabel("Default method"), 0, 0)
-        method_grid.addWidget(self.method_combo, 0, 1, 1, 3)
+        method_grid.addWidget(self.method_combo, 0, 1)
+
+        self.accelerator_combo = QComboBox()
+        for accel_id, accel_name in (
+            ("cuda", "CUDA / GPU (TRL)"),
+            ("npu", "NPU engine"),
+            ("tpu", "TPU engine"),
+            ("cpu", "CPU engine"),
+            ("auto", "Auto (NPU → TPU → CUDA)"),
+        ):
+            self.accelerator_combo.addItem(accel_name, accel_id)
+        self.accelerator_combo.currentIndexChanged.connect(self._on_method_changed)
+        method_grid.addWidget(QLabel("Accelerator"), 0, 2)
+        method_grid.addWidget(self.accelerator_combo, 0, 3)
 
         self.method_hint = QLabel("")
         self.method_hint.setObjectName("HintLabel")
@@ -198,6 +211,15 @@ class TrainingTab(QWidget):
         self.clip_label = QLabel("PPO clip")
         method_grid.addWidget(self.clip_label, 4, 2)
         method_grid.addWidget(self.clip_spin, 4, 3)
+
+        self.npu_artifact_label = QLabel("ONNX artifact")
+        self.npu_artifact_edit = QLineEdit()
+        self.npu_artifact_edit.setPlaceholderText(
+            "ONNX-GenAI folder (blank = ~/.finetuner/bench/models/qwen2.5-0.5b-instruct-onnx-genai)"
+        )
+        self.npu_artifact_edit.textChanged.connect(self._sync_config)
+        method_grid.addWidget(self.npu_artifact_label, 5, 0)
+        method_grid.addWidget(self.npu_artifact_edit, 5, 1, 1, 3)
 
         layout.addWidget(method_group)
 
@@ -318,6 +340,8 @@ class TrainingTab(QWidget):
 
         method_idx = max(0, self.method_combo.findData(t.training_method))
         self.method_combo.setCurrentIndex(method_idx)
+        accel_idx = max(0, self.accelerator_combo.findData(t.accelerator or "cuda"))
+        self.accelerator_combo.setCurrentIndex(accel_idx)
         reward_idx = max(0, self.reward_combo.findData(t.reward_function))
         self.reward_combo.setCurrentIndex(reward_idx)
         self.reward_model_edit.setText(t.reward_model_id)
@@ -325,6 +349,7 @@ class TrainingTab(QWidget):
         self.num_gen_spin.setValue(t.grpo_num_generations)
         self.kl_spin.setValue(t.ppo_kl_coef)
         self.clip_spin.setValue(t.ppo_cliprange)
+        self.npu_artifact_edit.setText(t.npu_artifact_path)
 
         self._update_method_hint()
         self._update_method_fields()
@@ -344,19 +369,32 @@ class TrainingTab(QWidget):
     def _update_method_hint(self) -> None:
         method_id = self.method_combo.currentData() or "sft"
         spec = TRAINING_METHODS.get(method_id)
+        accelerator = self.accelerator_combo.currentData() or "cuda"
+        if accelerator in {"npu", "tpu", "cpu"} or method_id in {"npu", "tpu"}:
+            engine = "NPU/TPU engine (frozen ONNX + logit LoRA)"
+        elif accelerator == "auto":
+            engine = "auto device (NPU/TPU engine if present, otherwise TRL)"
+        else:
+            engine = "CUDA/TRL trainer"
         description = spec.description if spec else ""
         self.method_hint.setText(
-            f"{spec.name if spec else method_id.upper()} uses these settings when you run finetune."
+            f"{spec.name if spec else method_id.upper()} on {engine}."
         )
         self.method_hint.setToolTip(description)
 
     def _update_method_fields(self) -> None:
         method_id = self.method_combo.currentData() or "sft"
-        uses_reward = method_id in ("grpo", "ppo")
-        uses_reward_model = method_id == "ppo"
+        accelerator = self.accelerator_combo.currentData() or "cuda"
+        uses_reward = method_id in ("grpo", "ppo", "rloo")
+        uses_reward_model = method_id == "ppo" and accelerator == "cuda"
         uses_beta = method_id in ("dpo", "kto")
-        uses_grpo = method_id == "grpo"
+        uses_grpo = method_id in ("grpo", "rloo")
         uses_ppo = method_id == "ppo"
+        uses_accel = accelerator in {"npu", "tpu", "cpu", "auto"} or method_id in {"npu", "tpu"}
+        if uses_accel and accelerator != "cuda" and self.qlora_check.isChecked():
+            self.qlora_check.blockSignals(True)
+            self.qlora_check.setChecked(False)
+            self.qlora_check.blockSignals(False)
 
         show_reward = uses_reward
         show_reward_model = uses_reward_model or (
@@ -370,6 +408,7 @@ class TrainingTab(QWidget):
             (uses_beta, (self.beta_label, self.beta_spin)),
             (uses_grpo, (self.num_gen_label, self.num_gen_spin)),
             (uses_ppo, (self.kl_label, self.kl_spin, self.clip_label, self.clip_spin)),
+            (uses_accel, (self.npu_artifact_label, self.npu_artifact_edit)),
         ):
             for widget in widgets:
                 widget.setVisible(visible)
@@ -537,12 +576,14 @@ class TrainingTab(QWidget):
         t.use_qlora = self.qlora_check.isChecked()
         t.allow_synthetic_preferences = self.synthetic_preferences_check.isChecked()
         t.training_method = self.method_combo.currentData() or "sft"
+        t.accelerator = self.accelerator_combo.currentData() or "cuda"
         t.reward_function = self.reward_combo.currentData() or "exact_match"
         t.reward_model_id = self.reward_model_edit.text().strip()
         t.dpo_beta = self.beta_spin.value()
         t.grpo_num_generations = self.num_gen_spin.value()
         t.ppo_kl_coef = self.kl_spin.value()
         t.ppo_cliprange = self.clip_spin.value()
+        t.npu_artifact_path = self.npu_artifact_edit.text().strip()
         self.config.hf_token = self.hf_token_edit.text().strip()
         self._update_method_fields()
         self.config_changed.emit()
