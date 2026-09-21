@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 from finetuner.monitor.stats import StatsPoller, SystemStats
 from finetuner.ui.theme import Theme, chart_colors
 
-_CHART_HEIGHT = 260
+_CHART_HEIGHT = 300
 
 
 class Sparkline(QWidget):
@@ -194,7 +194,7 @@ class MonitorTab(QScrollArea):
         content = self.widget()
         if content is None or content.layout() is None:
             return
-        height = max(content.layout().sizeHint().height(), 720)
+        height = max(content.layout().sizeHint().height(), 800)
         content.setMinimumHeight(height)
         content.resize(max(self.viewport().width(), 1), height)
 

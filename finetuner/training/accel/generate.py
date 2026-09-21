@@ -14,8 +14,11 @@ def generate(
     max_new_tokens: int,
     temperature: float = 0.0,
     seed: int = 0,
+    stop=None,
+    tokenizer=None,
 ) -> tuple[np.ndarray, float]:
     ids = [int(token) for token in np.asarray(prompt_ids).reshape(-1).tolist()]
+    prompt_len = len(ids)
     logprob = 0.0
     rng = np.random.default_rng(seed)
     for _ in range(max(1, max_new_tokens)):
@@ -31,4 +34,12 @@ def generate(
             nxt = int(np.argmax(last))
         logprob += float(log_softmax(last)[nxt])
         ids.append(nxt)
+        if stop is not None:
+            decoded = (
+                tokenizer.decode(ids[prompt_len:])
+                if tokenizer is not None
+                else "".join(str(item) for item in ids[prompt_len:])
+            )
+            if stop(decoded):
+                break
     return np.array(ids, dtype=np.int64), logprob

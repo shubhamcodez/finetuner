@@ -7,11 +7,11 @@ from datasets import Dataset
 
 from finetuner.core.paths import bundled_assets_dir
 from finetuner.datasets.hf_datasets import load_hf_split, normalize_hf_dataset_id
-from finetuner.datasets.presets import FORMATTERS, get_preset
+from finetuner.datasets.presets import FORMATTERS, eval_row, get_preset
 from finetuner.datasets.rows import row_to_text
 
 
-def _load_jsonl(path: Path, formatter, limit: int | None) -> Dataset:
+def _load_jsonl(path: Path, formatter, limit: int | None, preset_id: str = "") -> Dataset:
     rows = []
     with path.open(encoding="utf-8") as f:
         for line in f:
@@ -21,7 +21,7 @@ def _load_jsonl(path: Path, formatter, limit: int | None) -> Dataset:
             row = json.loads(line)
             text = row_to_text(row, formatter)
             if text:
-                rows.append({"text": text})
+                rows.append(eval_row(preset_id, row, text) if preset_id else {"text": text})
             if limit and len(rows) >= limit:
                 break
     if not rows:
@@ -69,11 +69,11 @@ def load_preset_dataset(
         if bundled is None:
             raise ValueError(f"Preset {preset_id} has no bundled sample available.")
         _log(f"Loading offline bundled sample: {bundled}")
-        return _load_jsonl(bundled, formatter, limit)
+        return _load_jsonl(bundled, formatter, limit, preset_id)
 
     if preset.preset_id == "sample" and bundled is not None:
         _log(f"Loading bundled preset dataset: {bundled}")
-        return _load_jsonl(bundled, formatter, limit)
+        return _load_jsonl(bundled, formatter, limit, preset_id)
 
     if preset.hf_dataset:
         repo_id = normalize_hf_dataset_id(preset.hf_dataset)
@@ -96,7 +96,7 @@ def load_preset_dataset(
         for row in raw:
             text = row_to_text(row, formatter)
             if text:
-                rows.append({"text": text})
+                rows.append(eval_row(preset_id, row, text))
 
         if not rows:
             raise ValueError(f"Preset {preset_id} produced no training examples.")

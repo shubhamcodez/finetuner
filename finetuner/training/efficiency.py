@@ -171,16 +171,20 @@ def parse_trainable_params(log_text: str) -> int:
     return 0
 
 
+_NON_QUALITY = {"n", "gold_logprob"}
+
+
 def delta_scores(scores: dict[str, float], baseline: dict[str, float]) -> dict[str, float]:
     return {
         task_id: float(scores[task_id]) - float(baseline.get(task_id, 0.0))
         for task_id in scores
+        if task_id != "n"
     }
 
 
 def finalize_cell(result: CellResult) -> CellResult:
     result.delta_scores = delta_scores(result.scores, result.baseline_scores)
-    deltas = list(result.delta_scores.values())
+    deltas = [value for key, value in result.delta_scores.items() if key not in _NON_QUALITY]
     result.mean_delta = sum(deltas) / len(deltas) if deltas else 0.0
     hours = result.train_seconds / 3600.0
     result.delta_per_hour = result.mean_delta / hours if hours else 0.0
@@ -208,25 +212,34 @@ def render_markdown(results: list[CellResult], *, title: str, device: str) -> st
         "",
         f"Device: `{device}`",
         "",
-        "Efficiency is quality gained versus the untrained baseline, divided by cost.",
-        "Primary ranking uses **Δacc / train-hour**. Reward models use preference ranking accuracy.",
+        "Before = frozen decoder. After = same decoder plus the trained adapter.",
+        "Accuracy is multiple-choice match (HellaSwag/ARC) or GSM8K exact match. Gold log-prob is mean token log p(correct).",
         "",
-        "| Method | Dataset | Status | Train s | Peak RAM GB | Steps/s | Holdout/bench Δ | Δ / hour | Δ / step | Loss |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Method | Dataset | N | Before acc | After acc | Δ acc | Before logp | After logp | Δ logp | Train s | Loss |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for item in results:
         loss = "" if item.final_loss is None else f"{item.final_loss:.4f}"
+        after_acc = item.scores.get("accuracy", item.scores.get("reward_ranking", item.scores.get("holdout", 0.0)))
+        before_acc = item.baseline_scores.get(
+            "accuracy", item.baseline_scores.get("reward_ranking", item.baseline_scores.get("holdout", 0.0))
+        )
+        after_lp = item.scores.get("gold_logprob")
+        before_lp = item.baseline_scores.get("gold_logprob")
         lines.append(
-            "| {method} | {dataset} | {status} | {train:.1f} | {ram:.2f} | {sps:.3f} | {delta:.2f} | {dph:.2f} | {dps:.3f} | {loss} |".format(
+            "| {method} | {dataset} | {n:.0f} | {before:.1f} | {after:.1f} | {delta:.1f} | {blp} | {alp} | {dlp} | {train:.1f} | {loss} |".format(
                 method=item.method,
                 dataset=item.dataset,
-                status=item.status,
+                n=item.scores.get("n", item.baseline_scores.get("n", 0.0)),
+                before=float(before_acc or 0.0),
+                after=float(after_acc or 0.0),
+                delta=float(after_acc or 0.0) - float(before_acc or 0.0),
+                blp="" if before_lp is None else f"{before_lp:.3f}",
+                alp="" if after_lp is None else f"{after_lp:.3f}",
+                dlp=""
+                if before_lp is None or after_lp is None
+                else f"{float(after_lp) - float(before_lp):.3f}",
                 train=item.train_seconds,
-                ram=item.peak_ram_gb,
-                sps=item.steps_per_sec,
-                delta=item.mean_delta,
-                dph=item.delta_per_hour,
-                dps=item.delta_per_step,
                 loss=loss,
             )
         )

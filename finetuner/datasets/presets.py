@@ -166,6 +166,54 @@ def preset_list() -> list[DatasetPreset]:
     return list(DATASET_PRESETS.values())
 
 
+def eval_row(preset_id: str, row: dict, text: str) -> dict:
+    """Keep the fields needed to score a held-out benchmark example."""
+    payload = {"text": text, "task": preset_id}
+    prompt, gold = text.split("### Response:", 1) if "### Response:" in text else (text, "")
+    payload["prompt"] = prompt.strip() + "\n### Response:\n"
+    payload["gold"] = gold.strip()
+    if preset_id == "gsm8k":
+        payload["answer"] = str(row.get("answer") or payload["gold"])
+        return payload
+    if preset_id == "hellaswag":
+        endings = [str(item) for item in (row.get("endings") or [])]
+        label = row.get("label", row.get("labels", 0))
+        if isinstance(label, list):
+            label = label[0] if label else 0
+        try:
+            index = int(label)
+        except (TypeError, ValueError):
+            index = 0
+        if endings:
+            index = max(0, min(index, len(endings) - 1))
+            payload["choices"] = endings
+            payload["gold_index"] = index
+            payload["gold"] = endings[index]
+        return payload
+    if preset_id in {"arc_challenge", "mmlu"}:
+        if preset_id == "arc_challenge":
+            choices = row.get("choices") or {}
+            labels = list(choices.get("label") or [])
+            texts = [str(item) for item in (choices.get("text") or [])]
+            answer_key = str(row.get("answerKey") or "")
+            gold_index = next((i for i, label in enumerate(labels) if str(label) == answer_key), 0)
+        else:
+            texts = [str(item) for item in (row.get("choices") or [])]
+            labels = ["A", "B", "C", "D"][: len(texts)]
+            answer = row.get("answer", 0)
+            try:
+                gold_index = int(answer)
+            except (TypeError, ValueError):
+                gold_index = labels.index(str(answer)) if str(answer) in labels else 0
+        if texts:
+            gold_index = max(0, min(gold_index, len(texts) - 1))
+            payload["choices"] = texts
+            payload["gold_index"] = gold_index
+            payload["gold"] = texts[gold_index]
+        return payload
+    return payload
+
+
 def hub_repo_id(preset_id: str) -> str:
     value = (preset_id or "").strip()
     if value.startswith("hf:"):
