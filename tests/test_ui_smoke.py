@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QScrollArea
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QPushButton, QScrollArea
 
 from finetuner.core.job import ModelRunResult, ProjectConfig
 from finetuner.monitor.stats import SystemStats
 from finetuner.ui.analysis_tab import AnalysisTab
 from finetuner.ui.deployment_tab import DeploymentTab
 from finetuner.ui.distillation_tab import DistillationTab
+from finetuner.ui.evals_tab import EvalsTab
 from finetuner.inference.planner import AcceleratorInventory
+from finetuner.inference.chat_client import ChatTurn
 from finetuner.ui.inference_tab import InferenceTab
 from finetuner.core.hf_trending import HubModel
 from finetuner.ui.models_tab import AddModelDialog, HubModelCard
@@ -82,10 +84,36 @@ def test_distillation_selectors_include_downloaded_models(app, monkeypatch, tmp_
     teacher_index = tab.teacher.findData(str(model_path))
     student_index = tab.student.findData(str(model_path))
     assert teacher_index >= 0 and student_index >= 0
-    assert tab.teacher.itemText(teacher_index) == "Downloaded | org/teacher"
+    assert tab.teacher.itemText(teacher_index) == "org/teacher"
 
     tab.teacher.setCurrentIndex(teacher_index)
     assert config.distillation.teacher_model == str(model_path)
+    tab.close()
+
+
+@pytest.mark.ui
+def test_tool_pages_list_the_same_downloaded_models(app, monkeypatch, tmp_path):
+    model_path = tmp_path / "Qwen__Qwen2.5-0.5B-Instruct"
+    model_path.mkdir()
+    (model_path / "config.json").write_text('{"model_type":"qwen2"}', encoding="utf-8")
+    (model_path / "model.safetensors").write_bytes(b"weights")
+    monkeypatch.setattr("finetuner.core.model_catalog.models_dir", lambda: tmp_path)
+    config = ProjectConfig()
+    pages = (
+        DeploymentTab(config),
+        AnalysisTab(config),
+        EvalsTab(config),
+    )
+    for tab in pages:
+        index = tab.model.findData(str(model_path))
+        assert index >= 0
+        assert "Qwen" in tab.model.itemText(index)
+        tab.model.setCurrentIndex(index)
+        assert tab.selected_model_path() == str(model_path)
+        tab.close()
+    assert config.quantization.model_path == str(model_path)
+    assert config.analysis.model_path == str(model_path)
+    assert config.eval_model_path == str(model_path)
 
 
 @pytest.mark.ui
@@ -163,12 +191,113 @@ def test_system_tab_renders_npu_stats(app):
 
 
 @pytest.mark.ui
+def test_inference_model_menu_lists_downloaded_models(app, monkeypatch, tmp_path):
+    model_path = tmp_path / "Qwen__Qwen2.5-0.5B-Instruct"
+    model_path.mkdir()
+    (model_path / "config.json").write_text('{"model_type":"qwen2"}', encoding="utf-8")
+    (model_path / "model.safetensors").write_bytes(b"weights")
+    monkeypatch.setattr("finetuner.core.model_catalog.models_dir", lambda: tmp_path)
+    config = ProjectConfig()
+    tab = InferenceTab(config)
+
+    index = tab.model.findData(str(model_path))
+    assert index >= 0
+    assert "Qwen" in tab.model.itemText(index)
+    tab.model.setCurrentIndex(index)
+    assert tab.selected_model_path() == str(model_path)
+    assert config.inference.extra_options["model_path"] == str(model_path)
+    tab.close()
+
+
+@pytest.mark.ui
+def test_finetune_model_menu_lists_downloaded_models(app, monkeypatch, tmp_path):
+    model_path = tmp_path / "Qwen__Qwen2.5-0.5B-Instruct"
+    model_path.mkdir()
+    (model_path / "config.json").write_text('{"model_type":"qwen2"}', encoding="utf-8")
+    (model_path / "model.safetensors").write_bytes(b"weights")
+    monkeypatch.setattr("finetuner.core.model_catalog.models_dir", lambda: tmp_path)
+    monkeypatch.setattr(TrainingTab, "_start_trending_fetch", lambda self: None)
+    config = ProjectConfig()
+    tab = TrainingTab(config)
+
+    index = tab.model.findData(str(model_path))
+    assert index >= 0
+    assert "Qwen" in tab.model.itemText(index)
+    tab.model.setCurrentIndex(index)
+    assert tab.selected_model_path() == str(model_path)
+    assert config.training.model_path == str(model_path)
+    tab.close()
+
+
+@pytest.mark.ui
+def test_finetune_without_models_opens_models_page(app, monkeypatch, tmp_path):
+    monkeypatch.setattr("finetuner.core.model_catalog.models_dir", lambda: tmp_path)
+    monkeypatch.setattr(TrainingTab, "_start_trending_fetch", lambda self: None)
+    tab = TrainingTab(ProjectConfig())
+    opened: list[bool] = []
+    tab.models_requested.connect(lambda: opened.append(True))
+    tab.show()
+    app.processEvents()
+    assert opened
+    assert tab.model.count() == 0
+    tab.close()
+
+
+@pytest.mark.ui
+def test_inference_without_models_opens_models_page(app, monkeypatch, tmp_path):
+    monkeypatch.setattr("finetuner.core.model_catalog.models_dir", lambda: tmp_path)
+    tab = InferenceTab(ProjectConfig())
+    opened: list[bool] = []
+    tab.models_requested.connect(lambda: opened.append(True))
+    tab.show()
+    app.processEvents()
+    assert opened
+    assert tab.model.count() == 0
+    tab.close()
+
+
+@pytest.mark.ui
+def test_inference_chat_sends_when_model_is_serving(app, monkeypatch):
+    tab = InferenceTab(ProjectConfig())
+    assert not tab.chat_send.isEnabled()
+    tab.set_serve_status("http://127.0.0.1:9", "builtin")
+    assert tab.chat_send.isEnabled()
+
+    monkeypatch.setattr(
+        "finetuner.ui.inference_tab.request_chat",
+        lambda url, messages, **kwargs: ChatTurn("pong", "10.0 tok/s · 120 ms"),
+    )
+    tab.chat_input.setText("ping")
+    tab._send_chat()
+    assert tab._chat_worker is not None
+    assert tab._chat_worker.wait(2000)
+    app.processEvents()
+    transcript = tab.chat_log.toPlainText()
+    assert "You: ping" in transcript
+    assert "Model: pong" in transcript
+    assert tab.chat_metrics.text() == "10.0 tok/s · 120 ms"
+    assert not tab.chat_metrics.isHidden()
+    assert tab.chat_send.isEnabled()
+    tab.set_serve_status("")
+    assert not tab.chat_send.isEnabled()
+    tab.close()
+
+
+@pytest.mark.ui
 def test_inference_page_enables_only_detected_methods(app, monkeypatch):
     monkeypatch.setattr(
         "finetuner.inference.planner.detect_accelerator_inventory",
         lambda: AcceleratorInventory(1, "cuda", 12.0, ("RTX 4070",)),
     )
     tab = InferenceTab(ProjectConfig())
+    assert all("NPU" not in button.text() for button in tab.findChildren(QPushButton))
+    assert any(button.text() == "Serve" for button in tab.findChildren(QPushButton))
+    labels = [tab.target.itemText(index) for index in range(tab.target.count())]
+    assert labels[0] == "Auto"
+    assert "CPU" in labels
+    assert "Nvidia GPU" in labels
+    assert "Qualcomm NPU" in labels
+    assert tab.target.findData("nvidia_gpu") > 0
     tab._set_advanced_visible(True)
     tab.engine.setCurrentIndex(max(0, tab.engine.findData("vllm")))
     tab.target.setCurrentIndex(max(0, tab.target.findData("nvidia_gpu")))

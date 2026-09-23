@@ -50,7 +50,7 @@ def test_quality_recipe_defaults_to_full_sft_not_lora():
     assert not config.uses_lora()
     assert config.learning_rate <= 5e-5
     assert config.max_seq_length < 2048
-    assert config.max_steps >= 200
+    assert config.max_steps == 40
     assert not uses_accel_engine(config)
 
 

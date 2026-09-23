@@ -99,6 +99,7 @@ class QuantizationConfig:
     scheme: str = "symmetric"
     calibration_dataset: str = ""
     llama_cpp_path: str = ""
+    model_path: str = ""
     extra_options: dict[str, Any] | None = None
 
     def validate(self) -> list[str]:
@@ -143,6 +144,7 @@ class QuantizationConfig:
             "scheme": self.scheme,
             "calibration_dataset": self.calibration_dataset,
             "llama_cpp_path": self.llama_cpp_path,
+            "model_path": self.model_path,
             "extra_options": self.extra_options or {},
         }
 

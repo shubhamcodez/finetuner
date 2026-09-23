@@ -265,6 +265,63 @@ def describe_device_offer(
     return DeviceOffer(detected, choice, "Optimize for your device?", message)
 
 
+@dataclass(frozen=True)
+class DeviceMemory:
+    available: bool
+    free_gb: float | None = None
+    total_gb: float | None = None
+
+
+def _nvidia_memory_gb() -> tuple[float, float] | None:
+    try:
+        import pynvml
+
+        pynvml.nvmlInit()
+        info = pynvml.nvmlDeviceGetMemoryInfo(pynvml.nvmlDeviceGetHandleByIndex(0))
+        free = getattr(info, "free", None)
+        if free is None:
+            free = info.total - info.used
+        return float(free) / (1024**3), float(info.total) / (1024**3)
+    except Exception:
+        return None
+
+
+def _host_memory_gb() -> tuple[float, float]:
+    import psutil
+
+    memory = psutil.virtual_memory()
+    return memory.available / (1024**3), memory.total / (1024**3)
+
+
+def device_memory_snapshot(
+    capabilities: list[HardwareCapability] | None = None,
+) -> dict[str, DeviceMemory]:
+    """Availability and memory for every device row. Missing devices stay empty."""
+    caps = capabilities if capabilities is not None else detect_inference_hardware()
+    present = {item.target: item.available for item in caps}
+    ram_free, ram_total = _host_memory_gb()
+    nvidia = _nvidia_memory_gb()
+    snapshot: dict[str, DeviceMemory] = {
+        DeviceTarget.CPU.value: DeviceMemory(True, ram_free, ram_total),
+    }
+    for target in (
+        DeviceTarget.NVIDIA_GPU,
+        DeviceTarget.AMD_GPU,
+        DeviceTarget.INTEL_GPU,
+        DeviceTarget.APPLE_GPU,
+        DeviceTarget.INTEL_NPU,
+        DeviceTarget.QUALCOMM_NPU,
+    ):
+        if not present.get(target, False):
+            snapshot[target.value] = DeviceMemory(False)
+            continue
+        if target == DeviceTarget.NVIDIA_GPU and nvidia is not None:
+            snapshot[target.value] = DeviceMemory(True, nvidia[0], nvidia[1])
+        else:
+            snapshot[target.value] = DeviceMemory(True, ram_free, ram_total)
+    return snapshot
+
+
 def launch_targets(
     capabilities: list[HardwareCapability] | None = None,
 ) -> tuple[DeviceTarget, ...]:

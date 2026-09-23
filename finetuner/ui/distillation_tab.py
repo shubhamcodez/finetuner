@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from finetuner.core.job import ProjectConfig
-from finetuner.core.model_catalog import discover_downloaded_models
+from finetuner.ui.model_menu import reload_model_combo
 from finetuner.distillation.config import DistillationTechnique
 from finetuner.distillation.domains import DOMAIN_PRESETS
 from finetuner.ui.tool_run import ToolRunBar
@@ -25,6 +25,7 @@ from finetuner.ui.tool_run import ToolRunBar
 class DistillationTab(QWidget):
     config_changed = Signal()
     run_requested = Signal()
+    models_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -51,15 +52,7 @@ class DistillationTab(QWidget):
         form.setVerticalSpacing(4)
         self.form = form
         self.teacher = QComboBox()
-        self.teacher.setEditable(True)
-        self.teacher.lineEdit().setPlaceholderText(
-            "Select a downloaded model or enter a Hugging Face ID/path"
-        )
         self.student = QComboBox()
-        self.student.setEditable(True)
-        self.student.lineEdit().setPlaceholderText(
-            "Select a downloaded model or enter a Hugging Face ID/path"
-        )
         self.technique = QComboBox()
         techniques = (
             ("Sequence KD (portable)", DistillationTechnique.SEQUENCE.value),
@@ -108,50 +101,20 @@ class DistillationTab(QWidget):
 
         for widget in (self.technique, self.domain_mode):
             widget.currentIndexChanged.connect(self._sync)
-        self.teacher.currentTextChanged.connect(self._sync)
-        self.student.currentTextChanged.connect(self._sync)
+        self.teacher.currentIndexChanged.connect(self._sync)
+        self.student.currentIndexChanged.connect(self._sync)
         self.custom_domain.textChanged.connect(self._sync)
         self.max_samples.valueChanged.connect(self._sync)
         self.temperature.valueChanged.connect(self._sync)
 
     def _load_models(self) -> None:
-        current_teacher = self.config.distillation.teacher_model
-        current_student = self.config.distillation.student_model
-        for combo, current in ((self.teacher, current_teacher), (self.student, current_student)):
-            combo.blockSignals(True)
-            combo.clear()
-            values: set[str] = set()
-            downloaded_aliases: dict[str, str] = {}
-            for model in discover_downloaded_models():
-                combo.addItem(f"Downloaded | {model.name}", model.path)
-                combo.setItemData(combo.count() - 1, model.path, Qt.ItemDataRole.ToolTipRole)
-                values.add(model.path.casefold())
-                if model.source_id:
-                    values.add(model.source_id.casefold())
-                    downloaded_aliases[model.source_id.casefold()] = model.path
-            for model in self.config.models:
-                value = model.output_path or model.identifier
-                if not value or value.casefold() in values or model.identifier.casefold() in values:
-                    continue
-                combo.addItem(f"Queue | {model.name}", value)
-                combo.setItemData(combo.count() - 1, value, Qt.ItemDataRole.ToolTipRole)
-                values.add(value.casefold())
-            selected_value = downloaded_aliases.get(current.casefold(), current)
-            selected = combo.findData(selected_value)
-            if selected >= 0:
-                combo.setCurrentIndex(selected)
-            else:
-                combo.setCurrentText(current)
-            combo.blockSignals(False)
+        reload_model_combo(self.teacher, self.config.models, self.config.distillation.teacher_model)
+        reload_model_combo(self.student, self.config.models, self.config.distillation.student_model)
 
     @staticmethod
     def _selected_model(combo: QComboBox) -> str:
-        index = combo.currentIndex()
-        if index >= 0 and combo.currentText() == combo.itemText(index):
-            value = combo.itemData(index)
-            if value:
-                return str(value)
-        return combo.currentText().strip()
+        value = combo.currentData()
+        return str(value) if value else ""
 
     def _load_config(self) -> None:
         self._load_models()
@@ -168,6 +131,10 @@ class DistillationTab(QWidget):
     def showEvent(self, event) -> None:
         self._load_models()
         super().showEvent(event)
+        if self.teacher.count() == 0 and self.student.count() == 0:
+            QTimer.singleShot(0, self.models_requested.emit)
+        else:
+            self._sync()
 
     def _sync(self, _value=None) -> None:
         d = self.config.distillation

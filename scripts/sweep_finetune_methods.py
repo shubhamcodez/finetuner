@@ -46,7 +46,8 @@ def main() -> int:
     parser.add_argument("--seq-length", type=int, default=256)
     parser.add_argument("--grad-accum", type=int, default=4)
     parser.add_argument("--lora-rank", type=int, default=8)
-    parser.add_argument("--lr", type=float, default=2e-4)
+    parser.add_argument("--use-lora", action="store_true", help="Opt-in PEFT. Off = full-weight training.")
+    parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument(
         "--accelerator",
         default="cuda",
@@ -77,6 +78,7 @@ def main() -> int:
         learning_rate=args.lr,
         lora_rank=args.lora_rank,
         lora_alpha=max(16, args.lora_rank * 2),
+        use_lora=args.use_lora,
         accelerator=args.accelerator,
         npu_artifact_path=args.npu_artifact,
     )

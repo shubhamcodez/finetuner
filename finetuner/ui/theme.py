@@ -181,6 +181,72 @@ QPushButton#IconButton:hover {{
     color: {t.TEXT_TERTIARY};
     font-size: 12px;
 }}
+#ChatMetrics {{
+    background-color: transparent;
+    color: {t.TEXT_TERTIARY};
+    font-size: 10px;
+}}
+#DeviceMenu {{
+    background-color: {t.INPUT};
+    border: 1px solid {t.BORDER_INPUT};
+    border-radius: {t.RADIUS_INPUT};
+}}
+#DeviceMenu:hover {{
+    border-color: {t.BORDER};
+}}
+#DeviceMenuLabel {{
+    background: transparent;
+    color: {t.TEXT};
+    font-size: 14px;
+}}
+#DevicePanel {{
+    background-color: {t.SURFACE};
+    border: 1px solid {t.BORDER};
+    border-radius: {t.RADIUS_PANEL};
+}}
+#DeviceRow {{
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+}}
+#DeviceRow:hover {{
+    background-color: {t.HOVER};
+}}
+#DeviceRow[selected="true"] {{
+    background-color: {t.ACCENT_SUBTLE};
+    border: 1px solid {t.ACCENT_BORDER};
+}}
+#DeviceName {{
+    background: transparent;
+    color: {t.TEXT};
+    font-size: 13px;
+}}
+#DeviceSubtitle {{
+    background: transparent;
+    color: {t.TEXT_TERTIARY};
+    font-size: 11px;
+}}
+#DeviceMemory {{
+    background: transparent;
+    color: {t.TEXT_SECONDARY};
+    font-size: 12px;
+}}
+#DeviceMemory[missing="true"] {{
+    color: {t.TEXT_DISABLED};
+}}
+#RecommendedBadge {{
+    background-color: transparent;
+    color: {t.ACCENT};
+    border: 1px solid {t.ACCENT};
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 11px;
+}}
+#DeviceDivider {{
+    background-color: {t.BORDER_SUBTLE};
+    border: none;
+    max-height: 1px;
+}}
 
 #SurfaceCard, #ToolCard, #StepCard {{
     background-color: {t.SURFACE};

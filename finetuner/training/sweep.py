@@ -49,9 +49,10 @@ class SweepConfig:
     bundled_only: bool = False
     matching_eval_only: bool = False
     allow_cpu: bool = False
-    learning_rate: float = 2e-4
+    learning_rate: float = 2e-5
     lora_rank: int = 8
     lora_alpha: int = 16
+    use_lora: bool = False
     batch_size: int = 1
     gradient_accumulation_steps: int = 4
     max_seq_length: int = 256
@@ -323,10 +324,13 @@ def score_reward_ranking(model_path: str, dataset_path: str, log: LogFn, max_pai
         tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForSequenceClassification.from_pretrained(
         model_path,
+        num_labels=1,
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
         device_map="auto" if torch.cuda.is_available() else None,
         trust_remote_code=True,
     )
+    if tokenizer.pad_token_id is not None:
+        model.config.pad_token_id = tokenizer.pad_token_id
     if not torch.cuda.is_available():
         model = model.to("cpu")
     model.eval()
@@ -350,8 +354,8 @@ def score_reward_ranking(model_path: str, dataset_path: str, log: LogFn, max_pai
             chosen = {key: value.cuda() for key, value in chosen.items()}
             rejected = {key: value.cuda() for key, value in rejected.items()}
         with torch.no_grad():
-            chosen_score = float(model(**chosen).logits.squeeze())
-            rejected_score = float(model(**rejected).logits.squeeze())
+            chosen_score = float(model(**chosen).logits.reshape(-1)[0])
+            rejected_score = float(model(**rejected).logits.reshape(-1)[0])
         if chosen_score > rejected_score:
             wins += 1
     del model
@@ -387,17 +391,14 @@ def _score_policy(
             )
         return scores
 
-    from finetuner.eval.runner import run_evals
+    from finetuner.training.quality_eval import score_generate
 
-    official = [task_id for task_id in eval_ids if task_id in EVAL_TASKS]
-    if official:
-        try:
-            results = run_evals(model_path, official, eval_samples, log)
-            scores.update({item.task_id: item.score for item in results})
-        except Exception as exc:
-            log(f"Official eval failed ({exc}); using holdout only.")
-    if holdout:
-        scores["holdout"] = score_holdout(model_path, holdout, log)
+    sample = holdout[: max(0, eval_samples)] if eval_samples else holdout
+    generate = score_generate(model_path, sample, log=log)
+    scores.update(generate)
+    for task_id in eval_ids:
+        if task_id:
+            scores[task_id] = generate["accuracy"]
     return scores
 
 
@@ -477,7 +478,7 @@ def _training_config(config: SweepConfig, cell: SweepCell, reward_model_id: str 
         batch_size=config.batch_size,
         gradient_accumulation_steps=accum,
         max_seq_length=seq_length,
-        use_lora=False,
+        use_lora=config.use_lora,
         use_qlora=False,
         allow_synthetic_preferences=cell.method in PREFERENCE_METHODS,
         grpo_num_generations=2,
@@ -683,6 +684,10 @@ def run_sweep(config: SweepConfig, log: LogFn | None = None) -> dict:
         if cached_baseline:
             baselines[dataset_id] = cached_baseline
             logger(f"Reusing baseline scores for {dataset_id}")
+            if "reward_ranking" not in cached_baseline:
+                baselines[dataset_id]["reward_ranking"] = _score_reward(
+                    config, model_path, str(data_path), logger
+                )
         else:
             logger(f"Evaluating baseline on {dataset_id}")
             baseline_evals = (
@@ -700,10 +705,9 @@ def run_sweep(config: SweepConfig, log: LogFn | None = None) -> dict:
                 accelerator=config.accelerator,
                 npu_artifact_path=config.npu_artifact_path or model_path,
             )
-            if _uses_accel(config):
-                baselines[dataset_id]["reward_ranking"] = _score_reward(
-                    config, model_path, str(data_path), logger
-                )
+            baselines[dataset_id]["reward_ranking"] = _score_reward(
+                config, model_path, str(data_path), logger
+            )
             _release_memory()
         _write_json(baseline_path, baselines)
 

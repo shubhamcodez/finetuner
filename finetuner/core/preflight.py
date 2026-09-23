@@ -44,8 +44,20 @@ def collect_action_issues(config: ProjectConfig, action: ActionKind | str) -> li
         issues.append(PreflightIssue(area or spec.area, message, spec.action.value))
 
     if spec.needs_models:
-        for message in _model_issues(config):
-            add(message, "models")
+        selected = ""
+        if spec.action == ActionKind.OPTIMIZE:
+            selected = str((config.inference.extra_options or {}).get("model_path") or "")
+        elif spec.action == ActionKind.TRAIN:
+            selected = str(config.training.model_path or "")
+        elif spec.action == ActionKind.QUANTIZE:
+            selected = str(config.quantization.model_path or "")
+        elif spec.action == ActionKind.ANALYZE:
+            selected = str(config.analysis.model_path or "")
+        elif spec.action == ActionKind.EVALUATE:
+            selected = str(config.eval_model_path or "")
+        if not (selected and Path(selected).exists()):
+            for message in _model_issues(config):
+                add(message, "models")
     if spec.needs_dataset:
         for message in _dataset_issues(config):
             add(message, "training")

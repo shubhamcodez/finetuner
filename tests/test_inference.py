@@ -9,6 +9,8 @@ from finetuner.core.job import ProjectConfig
 from finetuner.inference.devices import (
     apply_device_recipe,
     detect_htp_ready,
+    DeviceMemory,
+    device_memory_snapshot,
     preferred_npu_target,
     recipe_for_target,
     select_best_runtime,
@@ -34,6 +36,36 @@ from finetuner.inference.specs import (
 )
 from finetuner.quantization.planner import HardwareCapability
 from finetuner.quantization.specs import DeviceTarget
+
+
+def test_device_memory_snapshot_marks_present_devices(monkeypatch):
+    class _Memory:
+        available = 8 * (1024**3)
+        total = 16 * (1024**3)
+
+    class _Virtual:
+        @staticmethod
+        def virtual_memory():
+            return _Memory()
+
+    monkeypatch.setitem(__import__("sys").modules, "psutil", _Virtual())
+    monkeypatch.setattr(
+        "finetuner.inference.devices._nvidia_memory_gb",
+        lambda: (10.6, 24.0),
+    )
+    snapshot = device_memory_snapshot(
+        [
+            HardwareCapability(DeviceTarget.CPU, True, "Oryon"),
+            HardwareCapability(DeviceTarget.NVIDIA_GPU, True, "RTX"),
+            HardwareCapability(DeviceTarget.AMD_GPU, False, "missing"),
+            HardwareCapability(DeviceTarget.QUALCOMM_NPU, True, "Hexagon"),
+        ]
+    )
+    assert snapshot["cpu"] == DeviceMemory(True, 8.0, 16.0)
+    assert snapshot["nvidia_gpu"] == DeviceMemory(True, 10.6, 24.0)
+    assert snapshot["amd_gpu"] == DeviceMemory(False)
+    assert snapshot["qualcomm_npu"].available
+    assert snapshot["intel_npu"] == DeviceMemory(False)
 
 
 def test_engine_target_matrix_rejects_false_portability_claims():

@@ -34,6 +34,12 @@ _PHOSPHOR = {
     "reasoning": "ph.brain",
     "downloads": "ph.download-simple",
     "likes": "ph.heart",
+    "sparkle": "ph.sparkle",
+    "check": "ph.check",
+    "cpu": "ph.cpu",
+    "gpu": "ph.monitor",
+    "npu": "ph.hexagon",
+    "apple": "ph.apple-logo",
 }
 
 

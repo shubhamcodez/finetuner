@@ -11,6 +11,29 @@ from finetuner.core.preflight import validate_action
 from finetuner.core.runner import ActionContext, execute_action
 
 
+def _configured_model_path(config, action: ActionKind) -> str:
+    if action == ActionKind.OPTIMIZE:
+        return str((config.inference.extra_options or {}).get("model_path") or "").strip()
+    if action == ActionKind.TRAIN:
+        return str(config.training.model_path or "").strip()
+    if action == ActionKind.QUANTIZE:
+        return str(config.quantization.model_path or "").strip()
+    if action == ActionKind.ANALYZE:
+        return str(config.analysis.model_path or "").strip()
+    if action == ActionKind.EVALUATE:
+        return str(config.eval_model_path or "").strip()
+    return ""
+
+
+def _same_model_path(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    left_path, right_path = Path(left), Path(right)
+    if left_path.exists() and right_path.exists():
+        return left_path.resolve() == right_path.resolve()
+    return left_path.as_posix().casefold() == right_path.as_posix().casefold()
+
+
 _ACTION_STATUS = {
     ActionKind.TRAIN: JobStatus.TRAINING,
     ActionKind.DISTILL: JobStatus.DISTILLING,
@@ -139,7 +162,36 @@ class JobQueue:
     def _subjects(self, needs_models: bool) -> list[ModelJob | None]:
         if not needs_models:
             return [None]
-        return [model for model in self.config.models if model.identifier]
+        queued = [model for model in self.config.models if model.identifier]
+        selected = _configured_model_path(self.config, self.action)
+        if self.action not in {
+            ActionKind.OPTIMIZE,
+            ActionKind.TRAIN,
+            ActionKind.QUANTIZE,
+            ActionKind.ANALYZE,
+            ActionKind.EVALUATE,
+        }:
+            return queued
+        if not selected:
+            return queued
+        matched = [model for model in queued if _same_model_path(self._job_path(model), selected)]
+        if matched:
+            return matched[:1]
+        if Path(selected).exists():
+            from finetuner.core.job import ModelSource
+
+            return [ModelJob(name=Path(selected).name, source=ModelSource.LOCAL, identifier=selected)]
+        return queued
+
+    def _job_path(self, model: ModelJob) -> str:
+        from finetuner.core.job import ModelSource
+        from finetuner.core.model_catalog import find_downloaded_model
+
+        if model.source == ModelSource.LOCAL:
+            return model.identifier
+        if model.output_path and Path(model.output_path).exists():
+            return model.output_path
+        return find_downloaded_model(model.identifier)
 
     def _ensure_model_ready(self, model: ModelJob) -> Path:
         from finetuner.core.job import ModelSource

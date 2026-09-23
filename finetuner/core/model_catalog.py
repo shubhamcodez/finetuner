@@ -42,6 +42,38 @@ def _infer_source_id(path: Path) -> str:
     return decoded
 
 
+def downloaded_model_choices(
+    jobs: list | None = None,
+    root: Path | None = None,
+) -> list[tuple[str, str]]:
+    """Name and on-disk path for every model the workbench can already run."""
+    from finetuner.core.job import ModelSource
+
+    choices: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def add(label: str, path: str) -> None:
+        if not path or not Path(path).exists():
+            return
+        key = str(Path(path).resolve()).casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        choices.append((label or Path(path).name, path))
+
+    for model in discover_downloaded_models(root):
+        add(model.name, model.path)
+    for job in jobs or []:
+        if job.source == ModelSource.LOCAL:
+            path = job.identifier
+        elif job.output_path and Path(job.output_path).exists():
+            path = job.output_path
+        else:
+            path = find_downloaded_model(job.identifier, root)
+        add(job.name, path)
+    return choices
+
+
 def discover_downloaded_models(root: Path | None = None) -> list[DownloadedModel]:
     catalog_root = Path(root) if root is not None else models_dir()
     if not catalog_root.is_dir():

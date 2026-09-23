@@ -118,10 +118,7 @@ if ($Arch -eq "universal") {
             }
         } else {
             Write-Host "Installing default PyTorch for ARM64 (no CUDA wheel)..."
-            & $venvPip install torch torchvision torchaudio
-            if ($LASTEXITCODE -ne 0) {
-                Write-Host "PyTorch is not available for this ARM Python. Continuing without it." -ForegroundColor Yellow
-            }
+            Invoke-Native $venvPip @("install", "torch", "torchvision", "torchaudio")
         }
     }
 
@@ -130,6 +127,12 @@ if ($Arch -eq "universal") {
     }
     # Quote extras so PowerShell does not treat [dev,analysis] as a wildcard.
     Invoke-Native $venvPip @("install", "-e", ".[dev,analysis]")
+
+    Write-Host "Verifying Hugging Face serve backend..."
+    Invoke-Native $venvPython @(
+        "-c",
+        "import torch, transformers, tokenizers, safetensors, huggingface_hub"
+    )
 
     if (-not $SkipTests) {
         Write-Host "Running unit tests and static checks..."
@@ -145,6 +148,12 @@ if ($Arch -eq "universal") {
     $distDir = Join-Path $Root "dist\Inferna-$Arch"
     if (-not (Test-Path (Join-Path $collected "Inferna.exe"))) {
         throw "Build failed: dist\Inferna\Inferna.exe not found"
+    }
+    foreach ($bundled in @("torch", "transformers", "tokenizers", "safetensors", "huggingface_hub")) {
+        $bundledDir = Join-Path $collected "_internal\$bundled"
+        if (-not (Test-Path $bundledDir)) {
+            throw "Installer payload is missing the Hugging Face serve backend: $bundledDir"
+        }
     }
     if (Test-Path $distDir) { Remove-Item $distDir -Recurse -Force }
     Move-Item $collected $distDir

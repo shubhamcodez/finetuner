@@ -3,6 +3,8 @@
 import os
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_all
+
 block_cipher = None
 root = Path(SPECPATH)
 arch = os.environ.get("FINETUNER_ARCH", "x64")
@@ -23,12 +25,10 @@ for source, dest in (
 
 icon = root / "assets" / "icon.ico"
 
-a = Analysis(
-    [str(root / "finetuner" / "app.py")],
-    pathex=[str(root)],
-    binaries=[],
-    datas=datas,
-    hiddenimports=[
+# Local Hugging Face weights are served by transformers + torch when llama-server
+# is absent. collect_all pulls model modules and native libraries into the
+# installer payload; a top-level hidden import does not.
+hiddenimports = [
         "finetuner",
         "finetuner.app",
         "finetuner.ui.main_window",
@@ -77,7 +77,32 @@ a = Analysis(
         "lighteval",
         "psutil",
         "numpy",
-    ],
+        "yaml",
+        "regex",
+        "tqdm",
+        "filelock",
+        "requests",
+        "fsspec",
+]
+binaries = []
+for package in ("torch", "transformers", "tokenizers", "safetensors", "huggingface_hub"):
+    try:
+        package_datas, package_binaries, package_hidden = collect_all(package)
+    except Exception as exc:
+        raise SystemExit(
+            f"Cannot package Inferna without {package} ({exc}). "
+            "The installer must include the Hugging Face serve backend."
+        ) from exc
+    datas.extend(package_datas)
+    binaries.extend(package_binaries)
+    hiddenimports.extend(package_hidden)
+
+a = Analysis(
+    [str(root / "finetuner" / "app.py")],
+    pathex=[str(root)],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

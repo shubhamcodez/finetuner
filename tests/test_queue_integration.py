@@ -34,6 +34,56 @@ def test_queue_executes_training_and_persists_result_lineage(monkeypatch, tmp_pa
     assert aggregate["action"]["id"] == "train"
 
 
+def test_queue_trains_the_selected_downloaded_model(monkeypatch, tmp_path):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    for path in (first, second):
+        path.mkdir()
+        (path / "config.json").write_text('{"model_type":"llama"}', encoding="utf-8")
+        (path / "model.safetensors").write_bytes(b"weights")
+    dataset = tmp_path / "data.jsonl"
+    dataset.write_text('{"text":"sample"}\n', encoding="utf-8")
+    config = ProjectConfig(
+        models=[
+            ModelJob("First", ModelSource.LOCAL, str(first)),
+            ModelJob("Second", ModelSource.LOCAL, str(second)),
+        ]
+    )
+    config.training.dataset_path = str(dataset)
+    config.training.model_path = str(second)
+    seen: list[str] = []
+
+    def fake_execute(context):
+        seen.append(context.model_path)
+        return ActionOutput(artifacts={"policy_model": context.model_path})
+
+    monkeypatch.setattr("finetuner.core.queue.runs_dir", lambda: tmp_path / "runs")
+    monkeypatch.setattr("finetuner.core.queue.execute_action", fake_execute)
+    results = JobQueue(config, action=ActionKind.TRAIN).run()
+    assert seen == [str(second)]
+    assert len(results) == 1
+    assert results[0].model_name == "Second"
+
+
+def test_queue_uses_the_selected_model_for_each_tool(tmp_path):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    for path in (first, second):
+        path.mkdir()
+    config = ProjectConfig(
+        models=[
+            ModelJob("First", ModelSource.LOCAL, str(first)),
+            ModelJob("Second", ModelSource.LOCAL, str(second)),
+        ]
+    )
+    config.quantization.model_path = str(second)
+    config.analysis.model_path = str(first)
+    config.eval_model_path = str(second)
+    assert JobQueue(config, action=ActionKind.QUANTIZE)._subjects(True)[0].name == "Second"
+    assert JobQueue(config, action=ActionKind.ANALYZE)._subjects(True)[0].name == "First"
+    assert JobQueue(config, action=ActionKind.EVALUATE)._subjects(True)[0].name == "Second"
+
+
 def test_queue_allows_deployment_without_dataset(monkeypatch, tmp_path):
     model_dir = tmp_path / "model"
     model_dir.mkdir()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Signal
+from PySide6.QtCore import QRectF, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QPen
 from PySide6.QtWidgets import (
     QComboBox,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from finetuner.core.job import ProjectConfig
+from finetuner.ui.model_menu import reload_model_combo
 from finetuner.ui.tool_run import ToolRunBar
 from finetuner.ui.theme import Theme
 
@@ -73,6 +74,7 @@ class RepresentationView(QGraphicsView):
 class AnalysisTab(QWidget):
     config_changed = Signal()
     run_requested = Signal()
+    models_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -91,6 +93,7 @@ class AnalysisTab(QWidget):
 
         settings = QHBoxLayout()
         form = QFormLayout()
+        self.model = QComboBox()
         self.reducer = QComboBox()
         self.reducer.addItem("PCA (fast, deterministic)", "pca")
         self.reducer.addItem("t-SNE", "tsne")
@@ -100,6 +103,7 @@ class AnalysisTab(QWidget):
         self.pooling.addItem("Last token", "last")
         self.max_samples = QSpinBox()
         self.max_samples.setRange(2, 100_000)
+        form.addRow("Model", self.model)
         form.addRow("Projection", self.reducer)
         form.addRow("Pooling", self.pooling)
         form.addRow("Maximum samples", self.max_samples)
@@ -125,12 +129,35 @@ class AnalysisTab(QWidget):
         self.plot = RepresentationView()
         layout.addWidget(self.plot, 1)
 
+        self.model.currentIndexChanged.connect(self._sync)
         self.reducer.currentIndexChanged.connect(self._sync)
         self.pooling.currentIndexChanged.connect(self._sync)
         self.max_samples.valueChanged.connect(self._sync)
 
+    def selected_model_path(self) -> str:
+        value = self.model.currentData()
+        return str(value) if value else ""
+
+    def reload_models(self) -> None:
+        reload_model_combo(
+            self.model,
+            self.config.models,
+            self.selected_model_path() or self.config.analysis.model_path,
+        )
+
+    def showEvent(self, event) -> None:
+        self.reload_models()
+        super().showEvent(event)
+        if self.model.count() == 0:
+            self.config.analysis.model_path = ""
+            QTimer.singleShot(0, self.models_requested.emit)
+        else:
+            self._sync()
+
     def _load_config(self) -> None:
         a = self.config.analysis
+        self.reload_models()
+        self.config.analysis.model_path = self.selected_model_path()
         self.reducer.setCurrentIndex(max(0, self.reducer.findData(a.reducer)))
         self.pooling.setCurrentIndex(max(0, self.pooling.findData(a.pooling)))
         self.max_samples.setValue(a.max_samples)
@@ -140,6 +167,7 @@ class AnalysisTab(QWidget):
         a.reducer = self.reducer.currentData() or "pca"
         a.pooling = self.pooling.currentData() or "mean"
         a.max_samples = self.max_samples.value()
+        a.model_path = self.selected_model_path()
         self.config_changed.emit()
 
     def _browse(self) -> None:

@@ -9,14 +9,16 @@ class ToolRunBar(QFrame):
 
     run_requested = Signal()
 
-    def __init__(self, action_label: str, parent=None) -> None:
+    def __init__(self, action_label: str, hint: str | None = None, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("PipelineContext")
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 8)
         row.setSpacing(12)
-        self.label = QLabel("Uses this page's settings. Other tools keep running independently.")
+        text = "Uses this page's settings. Other tools keep running independently." if hint is None else hint
+        self.label = QLabel(text)
         self.label.setObjectName("MutedLabel")
+        self.label.setVisible(bool(text))
         row.addWidget(self.label, 1)
         self.button = QPushButton(action_label)
         self.button.setObjectName("PrimaryButton")

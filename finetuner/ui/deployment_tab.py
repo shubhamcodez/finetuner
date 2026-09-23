@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -17,12 +17,14 @@ from PySide6.QtWidgets import (
 from finetuner.core.job import ProjectConfig
 from finetuner.quantization.planner import detect_hardware
 from finetuner.quantization.specs import DeviceTarget, backend_specs, get_backend_spec
+from finetuner.ui.model_menu import reload_model_combo
 from finetuner.ui.tool_run import ToolRunBar
 
 
 class DeploymentTab(QWidget):
     config_changed = Signal()
     run_requested = Signal()
+    models_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -45,6 +47,7 @@ class DeploymentTab(QWidget):
         form = QFormLayout()
         form.setVerticalSpacing(4)
         self.form = form
+        self.model = QComboBox()
         self.backend = QComboBox()
         for spec in backend_specs():
             self.backend.addItem(spec.name, spec.backend.value)
@@ -70,6 +73,7 @@ class DeploymentTab(QWidget):
         llama_row = QHBoxLayout()
         llama_row.addWidget(self.llama_path)
         llama_row.addWidget(browse_llama)
+        form.addRow("Model", self.model)
         form.addRow("Backend", self.backend)
         form.addRow("Device target", self.target)
         form.addRow("Weight bits", self.bits)
@@ -92,6 +96,7 @@ class DeploymentTab(QWidget):
         layout.addWidget(self.status)
         layout.addStretch()
 
+        self.model.currentIndexChanged.connect(self._sync)
         self.backend.currentIndexChanged.connect(self._backend_changed)
         self.target.currentIndexChanged.connect(self._sync)
         self.bits.currentIndexChanged.connect(self._sync)
@@ -102,8 +107,29 @@ class DeploymentTab(QWidget):
     def reload_from_config(self) -> None:
         self._load_config()
 
+    def selected_model_path(self) -> str:
+        value = self.model.currentData()
+        return str(value) if value else ""
+
+    def reload_models(self) -> None:
+        reload_model_combo(
+            self.model,
+            self.config.models,
+            self.selected_model_path() or self.config.quantization.model_path,
+        )
+
+    def showEvent(self, event) -> None:
+        self.reload_models()
+        super().showEvent(event)
+        if self.model.count() == 0:
+            self.config.quantization.model_path = ""
+            QTimer.singleShot(0, self.models_requested.emit)
+        else:
+            self._sync()
+
     def _load_config(self) -> None:
         q = self.config.quantization
+        self.reload_models()
         self.backend.setCurrentIndex(max(0, self.backend.findData(q.backend)))
         self._backend_changed()
         self.target.setCurrentIndex(max(0, self.target.findData(q.target)))
@@ -135,6 +161,7 @@ class DeploymentTab(QWidget):
         q.group_size = self.group_size.value()
         q.calibration_dataset = self.calibration.text().strip()
         q.llama_cpp_path = self.llama_path.text().strip()
+        q.model_path = self.selected_model_path()
         errors = q.validate()
         spec = get_backend_spec(q.backend)
         self.status.setText(

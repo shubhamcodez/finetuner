@@ -41,7 +41,7 @@ PAGE_COPY = {
     "evals": ("EVALUATION", "Evaluate models", "Score queued models on shared benchmarks."),
     "analysis": ("ANALYSIS", "Analyze representations", "Inspect hidden states, activations, and layer similarity."),
     "deployment": ("DEPLOYMENT", "Quantize for a device", "Compress a model for a concrete backend and accelerator."),
-    "inference": ("INFERENCE", "Optimize and serve", "Pick the strongest engine for this machine and bind port 1234."),
+    "inference": ("INFERENCE", "Optimize and serve", ""),
     "results": ("RESULTS", "Recent runs", "Compare artifacts and metrics from the latest tool runs."),
     "monitor": ("SYSTEM", "System status", "Compute, storage, and process health for this workstation."),
     "docs": ("DOCUMENTATION", "Documentation", "How the workbench is meant to be used."),

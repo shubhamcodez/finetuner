@@ -77,6 +77,7 @@ class TrainingConfig:
     quality_recipe: bool = True
     use_chat_template: bool = True
     seed: int = 42
+    model_path: str = ""
 
 
 @dataclass
@@ -107,6 +108,7 @@ class ProjectConfig:
     enabled_evals: list[str] = field(default_factory=lambda: ["mmlu", "gsm8k"])
     hf_token: str = ""
     eval_max_samples: int = 100
+    eval_model_path: str = ""
     quantization: QuantizationConfig = field(default_factory=QuantizationConfig)
     inference: InferenceOptimizationConfig = field(default_factory=InferenceOptimizationConfig)
     distillation: DistillationConfig = field(default_factory=DistillationConfig)
@@ -153,9 +155,11 @@ class ProjectConfig:
                 "quality_recipe": self.training.quality_recipe,
                 "use_chat_template": self.training.use_chat_template,
                 "seed": self.training.seed,
+                "model_path": self.training.model_path,
             },
             "enabled_evals": self.enabled_evals,
             "eval_max_samples": self.eval_max_samples,
+            "eval_model_path": self.eval_model_path,
             "quantization": self.quantization.to_dict(),
             "inference": self.inference.to_dict(),
             "distillation": self.distillation.to_dict(),
@@ -186,6 +190,7 @@ class ProjectConfig:
             # Read legacy tokens once for migration; to_dict intentionally never persists them.
             hf_token=data.get("hf_token", ""),
             eval_max_samples=data.get("eval_max_samples", 100),
+            eval_model_path=data.get("eval_model_path", ""),
             quantization=QuantizationConfig.from_dict(data.get("quantization")),
             inference=InferenceOptimizationConfig.from_dict(data.get("inference")),
             distillation=DistillationConfig.from_dict(data.get("distillation")),

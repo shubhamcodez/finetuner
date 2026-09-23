@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -21,9 +22,12 @@ from PySide6.QtWidgets import (
 )
 
 from finetuner.core.job import ProjectConfig
+from finetuner.inference.chat_client import ChatTurn, request_chat
+from finetuner.ui.model_menu import reload_model_combo
 from finetuner.inference.devices import (
     apply_best_runtime,
     apply_device_recipe,
+    device_memory_snapshot,
     launch_targets,
     recipe_for_target,
 )
@@ -35,7 +39,24 @@ from finetuner.inference.planner import (
 )
 from finetuner.inference.specs import InferenceEngine, engine_specs, get_engine_spec
 from finetuner.quantization.specs import DeviceTarget
+from finetuner.ui.device_selector import DeviceSelector
 from finetuner.ui.tool_run import ToolRunBar
+
+
+class _ChatWorker(QThread):
+    reply_ready = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, url: str, messages: list[dict[str, str]], parent=None) -> None:
+        super().__init__(parent)
+        self._url = url
+        self._messages = messages
+
+    def run(self) -> None:
+        try:
+            self.reply_ready.emit(request_chat(self._url, self._messages))
+        except Exception as exc:
+            self.failed.emit(str(exc))
 
 
 class InferenceTab(QWidget):
@@ -44,11 +65,15 @@ class InferenceTab(QWidget):
     quantization_changed = Signal()
     serve_requested = Signal(bool)
     stop_requested = Signal()
+    models_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
         self.config = config
         self._block_sync = False
+        self._serve_url = ""
+        self._chat_messages: list[dict[str, str]] = []
+        self._chat_worker: _ChatWorker | None = None
         self._build_ui()
         self._load_config()
         QTimer.singleShot(0, self._detect)
@@ -65,7 +90,7 @@ class InferenceTab(QWidget):
         layout.setContentsMargins(8, 6, 8, 6)
         layout.setSpacing(8)
 
-        self.run_bar = ToolRunBar("Run best engine for this machine")
+        self.run_bar = ToolRunBar("Run", hint="")
         self.run_bar.run_requested.connect(self._run_best)
         layout.addWidget(self.run_bar)
 
@@ -82,20 +107,18 @@ class InferenceTab(QWidget):
         form = QFormLayout()
         form.setVerticalSpacing(6)
         self.form = form
+        self.model = QComboBox()
         self.engine = QComboBox()
         for spec in engine_specs():
             self.engine.addItem(spec.name, spec.engine.value)
-        self.target = QComboBox()
-        self.target.addItem("Best for this machine", DeviceTarget.AUTO.value)
-        for target in DeviceTarget:
-            if target != DeviceTarget.AUTO:
-                self.target.addItem(target.value.replace("_", " ").title(), target.value)
+        self.target = DeviceSelector()
         self.max_context = QSpinBox()
         self.max_context.setRange(256, 1_048_576)
         self.max_context.setSingleStep(256)
         self.serve_port = QSpinBox()
         self.serve_port.setRange(1, 65535)
         self.serve_port.setValue(1234)
+        form.addRow("Model", self.model)
         form.addRow("Engine", self.engine)
         form.addRow("Device", self.target)
         form.addRow("Max context", self.max_context)
@@ -103,7 +126,7 @@ class InferenceTab(QWidget):
         layout.addLayout(form)
 
         serve_row = QHBoxLayout()
-        self.serve_plain_btn = QPushButton("Serve without optimizing")
+        self.serve_plain_btn = QPushButton("Serve")
         self.serve_plain_btn.clicked.connect(lambda: self.serve_requested.emit(False))
         self.stop_serve_btn = QPushButton("Stop server")
         self.stop_serve_btn.setObjectName("SecondaryButton")
@@ -117,6 +140,37 @@ class InferenceTab(QWidget):
         self.serve_status.setWordWrap(True)
         self.serve_status.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.serve_status)
+
+        chat_title = QLabel("Chat")
+        chat_title.setObjectName("SectionTitle")
+        layout.addWidget(chat_title)
+        self.chat_log = QPlainTextEdit()
+        self.chat_log.setObjectName("LogConsole")
+        self.chat_log.setReadOnly(True)
+        self.chat_log.setPlaceholderText("Start the server, then send a message to test the model.")
+        self.chat_log.setMinimumHeight(140)
+        layout.addWidget(self.chat_log)
+        chat_row = QHBoxLayout()
+        self.chat_input = QLineEdit()
+        self.chat_input.setPlaceholderText("Message")
+        self.chat_input.returnPressed.connect(self._send_chat)
+        self.chat_send = QPushButton("Send")
+        self.chat_send.setObjectName("PrimaryButton")
+        self.chat_send.setEnabled(False)
+        self.chat_send.clicked.connect(self._send_chat)
+        self.chat_input.setEnabled(False)
+        chat_row.addWidget(self.chat_input, 1)
+        chat_row.addWidget(self.chat_send)
+        layout.addLayout(chat_row)
+        metrics_row = QHBoxLayout()
+        metrics_row.setContentsMargins(0, 0, 2, 0)
+        metrics_row.addStretch()
+        self.chat_metrics = QLabel("")
+        self.chat_metrics.setObjectName("ChatMetrics")
+        self.chat_metrics.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.chat_metrics.setVisible(False)
+        metrics_row.addWidget(self.chat_metrics)
+        layout.addLayout(metrics_row)
 
         self.advanced_button = QPushButton("Show advanced settings")
         self.advanced_button.setObjectName("SecondaryButton")
@@ -173,11 +227,10 @@ class InferenceTab(QWidget):
         devices = QHBoxLayout()
         self.device_buttons: dict[str, QPushButton] = {}
         for target in launch_targets():
-            recipe = recipe_for_target(target)
             if target in {DeviceTarget.QUALCOMM_NPU, DeviceTarget.INTEL_NPU}:
-                label = "Run on NPU"
-            else:
-                label = f"Run on {recipe.label}"
+                continue
+            recipe = recipe_for_target(target)
+            label = f"Run on {recipe.label}"
             button = QPushButton(label)
             button.setToolTip(recipe.detail)
             button.clicked.connect(lambda _checked=False, chosen=target: self._run_on_device(chosen))
@@ -211,6 +264,7 @@ class InferenceTab(QWidget):
         scroll.setWidget(content)
         outer.addWidget(scroll)
 
+        self.model.currentIndexChanged.connect(self._sync)
         self.engine.currentIndexChanged.connect(self._engine_changed)
         self.target.currentIndexChanged.connect(self._target_changed)
         self.kv_cache.currentIndexChanged.connect(self._sync)
@@ -232,8 +286,25 @@ class InferenceTab(QWidget):
             "Hide advanced settings" if visible else "Show advanced settings"
         )
 
+    def selected_model_path(self) -> str:
+        value = self.model.currentData()
+        return str(value) if value else ""
+
+    def reload_models(self) -> None:
+        saved = str((self.config.inference.extra_options or {}).get("model_path") or "")
+        reload_model_combo(self.model, self.config.models, self.selected_model_path() or saved)
+
+    def showEvent(self, event) -> None:
+        self.reload_models()
+        super().showEvent(event)
+        if self.model.count() == 0:
+            QTimer.singleShot(0, self.models_requested.emit)
+        else:
+            self._sync()
+
     def _load_config(self) -> None:
         self._block_sync = True
+        self.reload_models()
         cfg = self.config.inference
         self.engine.setCurrentIndex(max(0, self.engine.findData(cfg.engine)))
         self._refresh_engine_fields()
@@ -340,6 +411,11 @@ class InferenceTab(QWidget):
             return
         features = self._current_features()
         cfg = self.config.inference
+        extras = dict(cfg.extra_options or {})
+        selected = self.selected_model_path()
+        if selected:
+            extras["model_path"] = selected
+        cfg.extra_options = extras
         cfg.engine = self.engine.currentData() or InferenceEngine.LLAMACPP.value
         cfg.target = self.target.currentData() or DeviceTarget.CPU.value
         cfg.kv_cache_dtype = self.kv_cache.currentData() or "auto"
@@ -412,6 +488,7 @@ class InferenceTab(QWidget):
             button.style().polish(button)
             visible_any = visible_any or present
         self.device_row.setVisible(visible_any)
+        self.target.set_memory(device_memory_snapshot(capabilities))
         self._apply_features(auto_fill=True)
         self._sync()
 
@@ -486,8 +563,52 @@ class InferenceTab(QWidget):
         self._set_advanced_visible(True)
 
     def set_serve_status(self, url: str = "", detail: str = "") -> None:
+        self._serve_url = url
+        busy = bool(self._chat_worker and self._chat_worker.isRunning())
+        self.chat_input.setEnabled(bool(url) and not busy)
+        self.chat_send.setEnabled(bool(url) and not busy)
         if url:
             extra = f" — {detail}" if detail else ""
             self.serve_status.setText(f"Serving at {url}{extra}")
+            self.chat_log.setPlaceholderText("Send a message to test the running model.")
         else:
             self.serve_status.setText(detail or "Not serving.")
+            self.chat_log.setPlaceholderText("Start the server, then send a message to test the model.")
+
+    def _append_chat(self, who: str, text: str) -> None:
+        self.chat_log.appendPlainText(f"{who}: {text}")
+
+    def _send_chat(self) -> None:
+        text = self.chat_input.text().strip()
+        if not text or not self._serve_url:
+            return
+        if self._chat_worker and self._chat_worker.isRunning():
+            return
+        self._chat_messages.append({"role": "user", "content": text})
+        self.chat_input.clear()
+        self._append_chat("You", text)
+        self.chat_input.setEnabled(False)
+        self.chat_send.setEnabled(False)
+        self._chat_worker = _ChatWorker(self._serve_url, list(self._chat_messages), self)
+        self._chat_worker.reply_ready.connect(self._on_chat_reply)
+        self._chat_worker.failed.connect(self._on_chat_failed)
+        self._chat_worker.start()
+
+    def _on_chat_reply(self, turn: ChatTurn) -> None:
+        self._chat_messages.append({"role": "assistant", "content": turn.text})
+        self._append_chat("Model", turn.text)
+        self.chat_metrics.setText(turn.metrics)
+        self.chat_metrics.setVisible(bool(turn.metrics))
+        serving = bool(self._serve_url)
+        self.chat_input.setEnabled(serving)
+        self.chat_send.setEnabled(serving)
+        if serving:
+            self.chat_input.setFocus()
+
+    def _on_chat_failed(self, error: str) -> None:
+        if self._chat_messages and self._chat_messages[-1].get("role") == "user":
+            self._chat_messages.pop()
+        self._append_chat("Error", error)
+        serving = bool(self._serve_url)
+        self.chat_input.setEnabled(serving)
+        self.chat_send.setEnabled(serving)

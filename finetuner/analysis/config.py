@@ -14,6 +14,7 @@ class AnalysisConfig:
     perplexity: float = 30.0
     seed: int = 42
     include_attention_entropy: bool = True
+    model_path: str = ""
 
     def validate(self) -> list[str]:
         errors: list[str] = []
@@ -44,6 +45,7 @@ class AnalysisConfig:
             "perplexity": self.perplexity,
             "seed": self.seed,
             "include_attention_entropy": self.include_attention_entropy,
+            "model_path": self.model_path,
         }
 
     @classmethod

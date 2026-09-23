@@ -229,6 +229,12 @@ class MainWindow(QMainWindow):
         self.deployment_tab.run_requested.connect(lambda: self._start_run(ActionKind.QUANTIZE.value))
         self.inference_tab.run_requested.connect(lambda: self._start_run(ActionKind.OPTIMIZE.value))
         self.inference_tab.serve_requested.connect(self._serve_queued_model)
+        self.inference_tab.models_requested.connect(lambda: self._navigate_to("models"))
+        self.training_tab.models_requested.connect(lambda: self._navigate_to("models"))
+        self.deployment_tab.models_requested.connect(lambda: self._navigate_to("models"))
+        self.analysis_tab.models_requested.connect(lambda: self._navigate_to("models"))
+        self.evals_tab.models_requested.connect(lambda: self._navigate_to("models"))
+        self.distillation_tab.models_requested.connect(lambda: self._navigate_to("models"))
         self.inference_tab.stop_requested.connect(self._stop_server)
         self.inference_tab.quantization_changed.connect(self.deployment_tab.reload_from_config)
         self.models_tab.model_ready.connect(self._on_model_ready)
@@ -432,7 +438,7 @@ class MainWindow(QMainWindow):
         box.setWindowTitle(offer.title)
         box.setText(offer.message)
         optimize_btn = box.addButton("Optimize and serve", QMessageBox.ButtonRole.AcceptRole)
-        plain_btn = box.addButton("Serve without optimizing", QMessageBox.ButtonRole.ActionRole)
+        plain_btn = box.addButton("Serve", QMessageBox.ButtonRole.ActionRole)
         box.addButton("Not now", QMessageBox.ButtonRole.RejectRole)
         box.exec()
         clicked = box.clickedButton()
@@ -448,16 +454,16 @@ class MainWindow(QMainWindow):
 
         from finetuner.inference.serve import resolved_model_path
 
+        path = self.inference_tab.selected_model_path()
+        if path and Path(path).exists():
+            self._start_serve(path, optimize=optimize)
+            return
         for model in reversed(self.config.models):
-            path = resolved_model_path(model)
-            if path and Path(path).exists():
-                self._start_serve(path, optimize=optimize)
+            queued = resolved_model_path(model)
+            if queued and Path(queued).exists():
+                self._start_serve(queued, optimize=optimize)
                 return
-        QMessageBox.information(
-            self,
-            "Serve",
-            "Add or download a model first. Inferna serves it on port 1234.",
-        )
+        self._navigate_to("models")
 
     def _start_serve(
         self,

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFormLayout,
     QGridLayout,
     QGroupBox,
@@ -14,12 +15,14 @@ from PySide6.QtWidgets import (
 
 from finetuner.core.job import ProjectConfig
 from finetuner.eval.tasks import EVAL_TASKS
+from finetuner.ui.model_menu import reload_model_combo
 from finetuner.ui.tool_run import ToolRunBar
 
 
 class EvalsTab(QWidget):
     config_changed = Signal()
     run_requested = Signal()
+    models_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -48,6 +51,9 @@ class EvalsTab(QWidget):
         samples_row = QFormLayout(settings_group)
         samples_row.setVerticalSpacing(4)
         samples_row.setContentsMargins(0, 0, 0, 0)
+        self.model = QComboBox()
+        self.model.currentIndexChanged.connect(self._on_model_changed)
+        samples_row.addRow("Model", self.model)
         self.max_samples_spin = QSpinBox()
         self.max_samples_spin.setRange(10, 10000)
         self.max_samples_spin.setValue(self.config.eval_max_samples)
@@ -70,6 +76,30 @@ class EvalsTab(QWidget):
 
         scroll.setWidget(content)
         outer.addWidget(scroll)
+        self.reload_models()
+
+    def selected_model_path(self) -> str:
+        value = self.model.currentData()
+        return str(value) if value else ""
+
+    def reload_models(self) -> None:
+        reload_model_combo(
+            self.model,
+            self.config.models,
+            self.selected_model_path() or self.config.eval_model_path,
+        )
+        self.config.eval_model_path = self.selected_model_path()
+
+    def showEvent(self, event) -> None:
+        self.reload_models()
+        super().showEvent(event)
+        if self.model.count() == 0:
+            self.config.eval_model_path = ""
+            QTimer.singleShot(0, self.models_requested.emit)
+
+    def _on_model_changed(self, _index: int = 0) -> None:
+        self.config.eval_model_path = self.selected_model_path()
+        self.config_changed.emit()
 
     def apply_selection(self, eval_ids: list[str]) -> None:
         self.config.enabled_evals = list(eval_ids)

@@ -35,9 +35,6 @@ def apply_quality_recipe(training: TrainingConfig) -> TrainingConfig:
     accum = training.gradient_accumulation_steps
     if accum < 4:
         accum = 8
-    steps = training.max_steps
-    if steps < 200:
-        steps = 400 if cuda else 200
     updates: dict = {
         "quality_recipe": True,
         "use_chat_template": True,
@@ -48,7 +45,6 @@ def apply_quality_recipe(training: TrainingConfig) -> TrainingConfig:
         ),
         "max_seq_length": seq,
         "gradient_accumulation_steps": accum,
-        "max_steps": steps,
         "batch_size": 1,
     }
     if training.uses_lora():

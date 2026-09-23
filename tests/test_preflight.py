@@ -7,6 +7,17 @@ from finetuner.core.job import ProjectConfig
 from finetuner.core.preflight import PreflightError, collect_action_issues, validate_action
 
 
+def test_training_accepts_a_downloaded_model_path(tmp_path):
+    model = tmp_path / "model"
+    model.mkdir()
+    config = ProjectConfig()
+    config.training.model_path = str(model)
+    config.training.dataset_path = str(tmp_path / "data.jsonl")
+    (tmp_path / "data.jsonl").write_text("{}\n", encoding="utf-8")
+    messages = [issue.message for issue in collect_action_issues(config, ActionKind.TRAIN)]
+    assert "Add at least one model" not in messages
+
+
 def test_default_training_config_is_valid_without_models_or_data():
     issues = collect_action_issues(ProjectConfig(), ActionKind.TRAIN)
     messages = [issue.message for issue in issues]

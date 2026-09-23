@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from finetuner.core.job import ProjectConfig
+from finetuner.ui.model_menu import reload_model_combo
 from finetuner.datasets.presets import DATASET_PRESETS, get_preset
 from finetuner.datasets.trending import FEATURED_DATASETS, HubDataset, fetch_trending_datasets, hub_preset_id
 from finetuner.eval.tasks import EVAL_TASKS
@@ -43,6 +44,7 @@ class TrainingTab(QWidget):
     config_changed = Signal()
     evals_suggest = Signal(list)
     run_requested = Signal()
+    models_requested = Signal()
 
     def __init__(self, config: ProjectConfig, parent=None) -> None:
         super().__init__(parent)
@@ -69,6 +71,13 @@ class TrainingTab(QWidget):
         self.run_bar = ToolRunBar("Run finetune")
         self.run_bar.run_requested.connect(self.run_requested.emit)
         layout.addWidget(self.run_bar)
+
+        model_form = QFormLayout()
+        model_form.setVerticalSpacing(6)
+        self.model = QComboBox()
+        self.model.currentIndexChanged.connect(self._sync_config)
+        model_form.addRow("Model", self.model)
+        layout.addLayout(model_form)
 
         preset_group = QGroupBox("Datasets")
         preset_layout = QVBoxLayout(preset_group)
@@ -344,6 +353,26 @@ class TrainingTab(QWidget):
         scroll.setWidget(content)
         outer.addWidget(scroll)
 
+    def selected_model_path(self) -> str:
+        value = self.model.currentData()
+        return str(value) if value else ""
+
+    def reload_models(self) -> None:
+        reload_model_combo(
+            self.model,
+            self.config.models,
+            self.selected_model_path() or self.config.training.model_path,
+        )
+
+    def showEvent(self, event) -> None:
+        self.reload_models()
+        super().showEvent(event)
+        if self.model.count() == 0:
+            QTimer.singleShot(0, self.models_requested.emit)
+            self.config.training.model_path = ""
+        else:
+            self.config.training.model_path = self.selected_model_path()
+
     def _load_from_config(self) -> None:
         self._block_sync = True
         t = self.config.training
@@ -382,7 +411,9 @@ class TrainingTab(QWidget):
         self._update_method_fields()
         self._update_preset_status()
         self._sync_preset_combo()
+        self.reload_models()
         self._block_sync = False
+        self.config.training.model_path = self.selected_model_path()
 
     def _on_reward_changed(self, _index: int = 0) -> None:
         self._update_method_fields()
@@ -681,6 +712,7 @@ class TrainingTab(QWidget):
         t.ppo_kl_coef = self.kl_spin.value()
         t.ppo_cliprange = self.clip_spin.value()
         t.npu_artifact_path = self.npu_artifact_edit.text().strip()
+        t.model_path = self.selected_model_path()
         self.config.hf_token = self.hf_token_edit.text().strip()
         self._update_method_fields()
         self.config_changed.emit()

@@ -25,6 +25,9 @@ def test_windows_build_script_refuses_cross_compile_and_names_outputs():
     assert "Inferna-Setup-$Arch.exe" in text
     assert "Inferna-windows-$Arch.zip" in text
     assert "no CUDA wheel" in text
+    assert "import torch, transformers, tokenizers, safetensors, huggingface_hub" in text
+    assert "Continuing without it" not in text
+    assert "Installer payload is missing the Hugging Face serve backend" in text
 
 
 def test_pyinstaller_spec_freezes_inference_and_current_ui():
@@ -32,6 +35,9 @@ def test_pyinstaller_spec_freezes_inference_and_current_ui():
     assert "finetuner.ui.inference_tab" in text
     assert "finetuner.inference.serve" in text
     assert "FINETUNER_ARCH" in text
+    assert "collect_all" in text
+    for package in ("torch", "transformers", "tokenizers", "safetensors", "huggingface_hub"):
+        assert package in text
     assert "workflows_tab" not in text
 
 
